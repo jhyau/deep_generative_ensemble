@@ -239,7 +239,7 @@ def aggregate_predictive(X_gt, X_syns, task=tt_predict_performance, models=None,
                     print(f'Train model {i+1}/{len(X_syns)} and save as {filename}')
         else:
             model = models[i]
-        reproducibility.enable_reproducible_results(seed=i+2022)
+        reproducibility.enable_reproducible_results(random_state=i+2022)
         X_train = X_syns[i].train()
         if approach == 'Naive':
             X_test = X_syns[i].test()
@@ -334,7 +334,7 @@ def aggregate(X_gt, X_syns, task, models=None, task_type='', load=True, save=Tru
                 if verbose:
                     print(f'Train model {i+1}/{len(X_syns)}')
                 seed = hash_str2int(full_filename)
-                reproducibility.enable_reproducible_results(seed=seed)
+                reproducibility.enable_reproducible_results(random_state=seed)
         else:
             model = models[i]
 

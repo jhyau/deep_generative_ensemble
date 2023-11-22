@@ -16,6 +16,21 @@ $ pip install .
 ```
 This code uses the generative modelling library of Synthcity (https://github.com/vanderschaarlab/synthcity)
 
+If encounter some version issues or want to use a more updated Synthcity, can do this instead:
+
+```bash
+conda create -n syn python=3.8
+conda activate syn
+pip install -r requirements.txt
+pip install synthcity
+```
+
+If there's a CUDA error about "symbol cublasLtGetStatusString version libcublasLt.so.11 not defined in file libcublasLt.so.11", it's likely due to pytorch1.13 automaticallying installing CUDA toolkit but you may already have one installed (like Google cloud instance set up), so run:
+
+```bash
+pip uninstall nvidia_cublas_cu11
+```
+
 ## Run experiments
 
 All experiments are provided in the notebook main_experiments.ipynb

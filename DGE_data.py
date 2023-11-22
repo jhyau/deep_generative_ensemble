@@ -135,7 +135,7 @@ def generate_synthetic(model_name, n_models, save, verbose, X_train, i, filename
     if verbose:
         print(f"Training model {i+1}/{n_models}")
 
-    reproducibility.enable_reproducible_results(seed=i)
+    reproducibility.enable_reproducible_results(random_state=i)
     if '_deep' in model_name:
         syn_model = Plugins().get(model_name.replace('_deep', ''), discriminator_n_layers_hidden=3, generator_n_layers_hidden=3)
     elif '_shallow' in model_name:
