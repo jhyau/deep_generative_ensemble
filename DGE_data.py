@@ -72,6 +72,8 @@ def load_real_data(dataset, p_train=0.8, max_n=None, reduce_to=20000):
         p_train = max_n/X.shape[0]
     X_gt = GenericDataLoader(X, target_column="target", train_size=p_train)
 
+    print("np.unique(y): ", np.unique(y))
+
     if len(np.unique(y)) == 1:
         X_gt.targettype = None
     elif len(np.unique(y)) <= 10:
@@ -94,6 +96,8 @@ def get_synthetic_data(X_gt,
     X_train = X_gt.train()
     n_train = X_train.shape[0]
     X_syns = []
+
+    print("Generating synthetic data with model: ", model_name)
 
     # generate synthetic data using ensemble. Change seeds across models
     for i in range(n_models):
@@ -128,6 +132,8 @@ def get_synthetic_data(X_gt,
         plt.scatter(a[:, 0], a[:, 1], marker='.')
         b = X_gt.train().unpack(as_numpy=True)[0]
         plt.scatter(b[:, 0], b[:, 1], marker='.')
+
+    print("Finished with synthetic data generation!")
 
     return X_syns
 
@@ -166,6 +172,8 @@ def get_real_and_synthetic(dataset,
                            max_n = 2000,
                            reduce_to=20000):
 
+    print("Loading real data...")
+
     X_gt = load_real_data(dataset, p_train=p_train, max_n=max_n, reduce_to=reduce_to)
     X_train, X_test = X_gt.train(), X_gt.test()
 
@@ -199,4 +207,169 @@ def get_real_and_synthetic(dataset,
         for i in range(len(X_syns)):
             X_syns[i]['target'] = (X_syns[i]['target']-1).astype(bool)
     
+    return X_gt, X_syns
+
+
+def get_synthetic_data_without_data_leak_naive(X_gt,
+                       model_name,
+                       n_models,
+                       nsyn,
+                       data_folder,
+                       load_syn=True,
+                       save=True,
+                       verbose=False):
+
+    X_train = X_gt.train()
+    n_train = X_train.shape[0]
+    X_syns = []
+
+    # divide the train data into n_models subsets to prevent same real data from being used for each generator model
+    subset_step = int(n_train / n_models)
+    start = 0
+    print("subset_step: ", subset_step)
+
+    # generate synthetic data using ensemble. Change seeds across models
+    for i in range(n_models):
+        print("start index: ", start)
+        os.makedirs(data_folder, exist_ok=True)
+        filename = f"{data_folder}_no_data_leak_naive/Xsyn_n{n_train}_seed{i}_subsetSize{subset_step}.pkl"
+
+        # Load data from disk if it exists and load_syn is True
+        if os.path.exists(filename) and load_syn:
+            X_syn = pickle.load(open(filename, "rb"))
+
+            if len(X_syn)<nsyn:
+                # generate more data if nsyn is too small
+                if verbose:
+                    print('Generating more data, existing dataset is smaller than nsyn')
+                X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:start+subset_step], i, filename)
+            
+        else:
+            # Otherwise generate new data
+            if verbose:
+                print('Generating new data, filename is', filename)
+            X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:start+subset_step], i, filename)
+            
+        X_syn = GenericDataLoader(X_syn[:nsyn], target_column="target")
+        X_syn.targettype = X_gt.targettype
+        X_syns.append(X_syn)
+
+        # Update start index
+        start += subset_step
+
+    if verbose:
+        # plot what we generated and compare to real
+        X_syn_all = np.concatenate([X_syns[i].unpack(as_numpy=True)[0]
+                                    for i in range(len(X_syns))])
+        a = X_syn_all[np.random.choice(X_syn_all.shape[0], 1000, replace=False)]
+        plt.scatter(a[:, 0], a[:, 1], marker='.')
+        b = X_gt.train().unpack(as_numpy=True)[0]
+        plt.scatter(b[:, 0], b[:, 1], marker='.')
+
+    return X_syns
+
+
+def get_synthetic_data_with_multiple_gen_models(X_gt,
+                       model_names, # list of model types (e.g. tvae, ctgan) instead of just one
+                       n_models,
+                       nsyn,
+                       data_folder,
+                       load_syn=True,
+                       save=True,
+                       verbose=False):
+
+    X_train = X_gt.train()
+    n_train = X_train.shape[0]
+    X_syns = []
+
+    # generate synthetic data using ensemble. Change seeds across models
+    for i in range(n_models):
+        mod_index = i % len(model_names)
+        model_name = model_names[mod_index]
+        print("Generating data with model: ", model_name)
+
+        os.makedirs(data_folder, exist_ok=True)
+        filename = f"{data_folder}/{model_name}_Xsyn_n{n_train}_seed{i}.pkl"
+
+        # Load data from disk if it exists and load_syn is True
+        if os.path.exists(filename) and load_syn:
+            X_syn = pickle.load(open(filename, "rb"))
+
+            if len(X_syn)<nsyn:
+                # generate more data if nsyn is too small
+                if verbose:
+                    print('Generating more data, existing dataset is smaller than nsyn')
+                X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train, i, filename)
+
+        else:
+            # Otherwise generate new data
+            if verbose:
+                print('Generating new data, filename is', filename)
+            X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train, i, filename)
+
+        X_syn = GenericDataLoader(X_syn[:nsyn], target_column="target")
+        X_syn.targettype = X_gt.targettype
+        X_syns.append(X_syn)
+
+    if verbose:
+        # plot what we generated and compare to real
+        X_syn_all = np.concatenate([X_syns[i].unpack(as_numpy=True)[0]
+                                    for i in range(len(X_syns))])
+        a = X_syn_all[np.random.choice(X_syn_all.shape[0], 1000, replace=False)]
+        plt.scatter(a[:, 0], a[:, 1], marker='.')
+        b = X_gt.train().unpack(as_numpy=True)[0]
+        plt.scatter(b[:, 0], b[:, 1], marker='.')
+
+    return X_syns
+
+
+def get_real_and_synthetic_with_multiple_models(dataset,
+                           nsyn=None,
+                           p_train=0.8,
+                           n_models=20,
+                           model_names=['ctgan'],
+                           load_syn=True,
+                           save=True,
+                           verbose=False,
+                           max_n = 2000,
+                           reduce_to=20000):
+
+    X_gt = load_real_data(dataset, p_train=p_train, max_n=max_n, reduce_to=reduce_to)
+    X_train, X_test = X_gt.train(), X_gt.test()
+
+    X_train.targettype = X_gt.targettype
+    X_test.targettype = X_gt.targettype
+    X_gt.dataset = dataset
+    n_train = X_train.shape[0]
+
+    if nsyn == 'train' or nsyn is None:
+        nsyn = n_train
+
+    models = model_names[0]
+    if len(model_names) > 1:
+        for i in range(1, len(model_names)):
+            models += "_" + model_names[i]
+
+    data_folder = os.path.join("synthetic_data",dataset,models)
+    print('n_total', X_gt.shape[0], 'n_train:', n_train)
+
+    # generate synthetic data for all number of training samples
+    X_syns = get_synthetic_data_with_multiple_models(X_gt, model_names,
+                                n_models=n_models,
+                                nsyn=nsyn,
+                                data_folder=data_folder,
+                                load_syn=load_syn,
+                                save=save,
+                                verbose=verbose)
+
+    for i in range(len(X_syns)):
+        X_syns[i].dataset = dataset
+        X_syns[i].targettype = X_gt.targettype
+        X_syns[i].dataset = dataset
+
+    if dataset == 'covid':
+        X_gt['target'] = (X_gt['target']-1).astype(bool)
+        for i in range(len(X_syns)):
+            X_syns[i]['target'] = (X_syns[i]['target']-1).astype(bool)
+
     return X_gt, X_syns

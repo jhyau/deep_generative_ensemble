@@ -40,6 +40,7 @@ def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, wo
     elif outlier:
         raise ValueError('outlier boolean is no longer supported')
 
+    print("targettype: ", X_gt.targettype)
     X_test.targettype = X_gt.targettype
 
     if not X_gt.targettype in ['regression', 'classification']:
