@@ -13,10 +13,11 @@ from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_pr
 # Model training. Predictive performance
 
 
-def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, workspace_folder='workspace', load=True, save=True, plot=False, outlier=False, verbose=False, include_concat=False):
+def predictive_experiment(X_gt, X_syns, n_models=20, task_type='mlp', results_folder=None, workspace_folder='workspace', load=True, save=True, plot=False, outlier=False, verbose=True, include_concat=True):
     """Compares predictions by different approaches.
 
     Args:
+        X_gt: real data
         X_test (GenericDataLoader): Test data.
         X_syns (List(GenericDataLoader)): List of synthetic datasets.
         X_test (GenericDataLoader): Real data
@@ -41,6 +42,7 @@ def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, wo
         raise ValueError('outlier boolean is no longer supported')
 
     print("targettype: ", X_gt.targettype)
+    print("include_concat: ", include_concat)
     X_test.targettype = X_gt.targettype
 
     if not X_gt.targettype in ['regression', 'classification']:
@@ -48,8 +50,12 @@ def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, wo
 
     
     # DGE (k=5, 10, 20)
-    n_models = 20  # maximum K
+    #n_models = 20  # maximum K
     num_runs = len(X_syns)//n_models
+
+    print("n_models: ", n_models)
+    print("num_runs: ", num_runs)
+    print("list size of synthetic datasets: ", len(X_syns))
 
     if num_runs > 1 and verbose:
         print('Computing means and stds')
@@ -77,10 +83,11 @@ def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, wo
 
         run_label = f'run_{run}'
 
+        print("run: ", run)
         # Oracle ensemble
 
         y_pred_mean, _, models = aggregate(
-            X_test, X_oracle, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'oracle_{run_label}_')
+            X_test, X_oracle, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'oracle_{run_label}_', verbose=verbose)
 
         if d == 2 and plot and run == 0:
             _, _, _, contour = aggregate_imshow(
@@ -99,7 +106,7 @@ def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, wo
                 X_syn_run = [X_syns[run]] * n_models
 
             y_pred_mean, y_pred_std, models = aggregate(
-                X_test, X_syn_run, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_')
+                X_test, X_syn_run, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_', verbose=verbose)
 
             if run == 0 and plot and approach == 'Naive (E)':
                 if d == 2:
@@ -115,7 +122,7 @@ def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, wo
         models = None
         for K, approach in zip(Ks, y_DGE_approaches):
             y_pred_mean, y_pred_std, models = aggregate(
-                X_test, X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{run_label}_')
+                X_test, X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{run_label}_', verbose=verbose)
 
             if d == 2 and plot and run == 0:
                 aggregate_imshow(
@@ -133,7 +140,7 @@ def predictive_experiment(X_gt, X_syns, task_type='mlp', results_folder=None, wo
         X_syn_cat.targettype = X_syns[0].targettype
         X_syn_cat = [X_syn_cat]
         y_pred_mean, _, _ = aggregate(
-            X_test, X_syn_cat, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'concat_run{run}')
+            X_test, X_syn_cat, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'concat_run{run}', verbose=verbose)
 
         if include_concat and run == 0 and plot:
             y_preds_for_plotting['DGE$_{20}$ (concat)'] = y_pred_mean

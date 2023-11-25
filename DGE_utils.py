@@ -141,6 +141,8 @@ def init_model(model_type, targettype):
 
 def supervised_task(X_gt, X_syn, model=None, model_type='mlp', verbose=False):
 
+    print("supervised task: ", X_gt.targettype)
+    print("model type: ", model_type)
     if type(model) == str or model is None:
         model = init_model(model_type, X_syn.targettype)
         X, y = X_syn.unpack(as_numpy=True)
@@ -317,6 +319,9 @@ def aggregate(X_gt, X_syns, task, models=None, task_type='', load=True, save=Tru
     results = []
     trained_models = []
     fileroot = f'{workspace_folder}/{task.__name__}_{task_type}'
+    print("fileroot in aggregate: ", fileroot)
+    print("task function name: ", task.__name__)
+    print("task type: ", task_type)
     
     if (save or load) and not os.path.exists(fileroot):
         os.makedirs(fileroot)
@@ -326,6 +331,47 @@ def aggregate(X_gt, X_syns, task, models=None, task_type='', load=True, save=Tru
         if models is None:
             if verbose:
                 print(f'Saving model as {full_filename}')
+
+            if os.path.exists(full_filename) and load:
+                print("loading existing model...")
+                model = pickle.load(open(full_filename, "rb"))
+            else:
+                print("Train model in aggregate")
+                model = None
+                if verbose:
+                    print(f'Train model {i+1}/{len(X_syns)}')
+                seed = hash_str2int(full_filename)
+                reproducibility.enable_reproducible_results(random_state=seed)
+        else:
+            model = models[i]
+
+        res, model = task(X_gt, X_syns[i], model, task_type, verbose)
+        results.append(res)
+        trained_models.append(model)
+        # save model to disk as pickle
+        if models is None and save:
+            pickle.dump(model, open(full_filename, "wb"))
+
+    return *meanstd(results), trained_models
+
+
+def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', models=None, task_type='', load=True, save=True, workspace_folder=None, filename='', verbose=False):
+    """
+    aggregate predictions from different synthetic datasets with stacking with a meta learning model
+    """
+
+    results = []
+    trained_models = []
+    fileroot = f'{workspace_folder}_stacking/{task.__name__}_{task_type}_stacking'
+
+    if (save or load) and not os.path.exists(fileroot):
+        os.makedirs(fileroot)
+
+    for i in range(len(X_syns)):
+        full_filename = f'{fileroot}_{filename}_{i}.pkl'
+        if models is None:
+            if verbose:
+                print(f'Saving model as {full_filename} in stacking aggregate')
 
             if os.path.exists(full_filename) and load:
                 model = pickle.load(open(full_filename, "rb"))
@@ -339,6 +385,7 @@ def aggregate(X_gt, X_syns, task, models=None, task_type='', load=True, save=Tru
             model = models[i]
 
         res, model = task(X_gt, X_syns[i], model, task_type, verbose)
+        # TODO: After training the len(X_syns) of downstream models, need to train the meta learning model
         results.append(res)
         trained_models.append(model)
         # save model to disk as pickle

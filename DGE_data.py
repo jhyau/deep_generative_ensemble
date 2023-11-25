@@ -242,13 +242,21 @@ def get_synthetic_data_without_data_leak_naive(X_gt,
                 # generate more data if nsyn is too small
                 if verbose:
                     print('Generating more data, existing dataset is smaller than nsyn')
-                X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:start+subset_step], i, filename)
+                if (i == n_models-1):
+                    print("last subset of data")
+                    X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:], i, filename)
+                else:
+                    X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:start+subset_step], i, filename)
             
         else:
             # Otherwise generate new data
             if verbose:
                 print('Generating new data, filename is', filename)
-            X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:start+subset_step], i, filename)
+            if (i == n_models-1):
+                print("last subset of data")
+                X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:], i, filename)
+            else:
+                X_syn = generate_synthetic(model_name, n_models, save, verbose, X_train[start:start+subset_step], i, filename)
             
         X_syn = GenericDataLoader(X_syn[:nsyn], target_column="target")
         X_syn.targettype = X_gt.targettype
@@ -354,7 +362,7 @@ def get_real_and_synthetic_with_multiple_models(dataset,
     print('n_total', X_gt.shape[0], 'n_train:', n_train)
 
     # generate synthetic data for all number of training samples
-    X_syns = get_synthetic_data_with_multiple_models(X_gt, model_names,
+    X_syns = get_synthetic_data_with_multiple_gen_models(X_gt, model_names,
                                 n_models=n_models,
                                 nsyn=nsyn,
                                 data_folder=data_folder,
