@@ -7,6 +7,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.neural_network import MLPClassifier, MLPRegressor    
 from synthcity.plugins.core.dataloader import GenericDataLoader
 from synthcity.utils import reproducibility
+from sklearn.ensemble import StackingClassifier
 
 
 import numpy as np
@@ -355,6 +356,43 @@ def aggregate(X_gt, X_syns, task, models=None, task_type='', load=True, save=Tru
     return *meanstd(results), trained_models
 
 
+def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=False, models=None, task_type='', load=True, save=True, workspace_folder=None, filename='', verbose=False, cv=5, stack_method='predict_proba'):
+    """
+    X_syns is a list of repeated datasets (all datasets in the list are the same)
+    default if 5 folds
+    """
+    print("In aggregate stacking folds")
+    X, y = X_syns[0].unpack(as_numpy=True)
+    if not mixed_models:
+        estimators = []
+        for i in range(len(X_syns)):
+            estimators.append((f'{task_type}_{i}', init_model(task_type, X_syns[0].targettype)))
+    else:
+        estimators = []
+        for i in range(len(X_syns)):
+            # Cycle through the list of task type models
+            index = i % len(task_type)
+            model_type = task_type[index]
+            print("model in estimators stack: ", model_type)
+            estimators.append((f'{model_type}_{i}', init_model(model_type, X_syns[0].targettype)))
+
+    if X_gt.targettype == 'regression':
+        stack_method = 'predict'
+    else:
+        stack_method = 'predict_proba'
+    if verbose:
+        verbosity = 1
+    else:
+        verbosity = 0
+    clf = StackingClassifier(estimators=estimators, final_estimator=init_model(meta_model, X_gt.targettype), cv=cv, stack_method=stack_method, verbose=verbosity)
+    clf.fit(X, y.reshape(-1,1))
+    if X_gt.targettype == 'regression':
+        meta_pred = clf.predict(X_gt.unpack(as_numpy=True)[0])
+    else:
+        meta_pred = clf.predict_proba(X_gt.unpack(as_numpy=True)[0])[:, 1]
+    return meta_pred
+
+
 def supervised_task_stacking(X_gt, X_syn, model=None, model_type='mlp', verbose=False):
 
     print("supervised task: ", X_gt.targettype)
@@ -373,12 +411,13 @@ def supervised_task_stacking(X_gt, X_syn, model=None, model_type='mlp', verbose=
     else:
         train_pred = model.predict_proba(X)[:, 1]
         pred = model.predict_proba(X_gt.unpack(as_numpy=True)[0])[:, 1]    
-    return train_pred.reshape(-1,1), y.reshape(-1,1), pred, model
+    return train_pred, y.reshape(-1,1), pred, model
 
 
 def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, models=None, task_type='', load=True, save=True, workspace_folder=None, filename='', verbose=False):
     """
-    aggregate predictions from different synthetic datasets with stacking with a meta learning model
+    aggregate predictions from different synthetic datasets with stacking with a meta learning model won't work for the meta learning model
+    each downstream classifier must be trained on the same synthetic train data for meta learner to be able to work, so combine all synthetic datasets when training classifiers in this case
     task needs to be one of the tasks modified to include stacking changes like supervised_task_stacking
     If mixed_models is True, use different models here, provide a list of downstream models in task_type 
     Else use the same model type
@@ -388,11 +427,10 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
 
     print("X_gt size: ", X_gt.shape)
     train_results = []
-    train_labels = []
+    #train_labels = []
     results = []
     trained_models = []
-    if not mixed_models:
-        fileroot = f'{workspace_folder}_stacking/{task.__name__}_{task_type}_stacking'
+    fileroot = f'{workspace_folder}_stacking/{task.__name__}_{task_type}_stacking_{len(X_syns)}_classifiers'
 
     if (save or load) and not os.path.exists(fileroot):
         os.makedirs(fileroot)
@@ -402,7 +440,7 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
             # Cycle through the list of task type models
             index = i % len(task_type)
             model_type = task_type[index]
-            fileroot = f'{workspace_folder}_mixed_stacking/{task.__name__}_{model_type}_mix_stacking'
+            fileroot = f'{workspace_folder}_mixed_stacking/{task.__name__}_{model_type}_mix_stacking_{len(X_syns)}_classifiers'
 
         full_filename = f'{fileroot}_{filename}_{i}.pkl'
         if models is None:
@@ -429,7 +467,7 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
             print("same downstream models")
             train_res, train_label, res, model = task(X_gt, X_syns[i], model, task_type, verbose)
         train_results.append(train_res)
-        train_labels.append(train_label)
+        #train_labels.append(train_label)
         results.append(res)
         trained_models.append(model)
         # save model to disk as pickle
@@ -446,19 +484,23 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
     else:
         print("training meta learning model...")
         meta_learn_model = init_model(meta_model, X_syns[0].targettype)
-        # For training, pass along trained model's outputs for each trained model, concatenate them all into one array, and train data label. Reshape bc only one feature in preds
-        all_train_preds = np.concatenate(train_results, axis=0).reshape(-1, 1)
-        all_train_y = np.concatenate(train_labels, axis=0).reshape(-1,1)
+        # For training, pass along trained model's outputs for each trained model on same dataset, concatenate them all into one array where each feature is each model's prediction, and train data label. Reshape bc only one feature in labels
+        if len(X_syns) > 1:
+            all_train_preds = np.vstack(train_results).T
+        else:
+            all_train_preds = train_results[0].reshape(-1, 1)
+        all_train_y = train_label #np.concatenate(train_labels, axis=0).reshape(-1,1)
         print("size of all synthetic train data pred results from downstream model: ", all_train_preds.shape)
         print("size of all synthetic train data y: ", all_train_y.shape)
         meta_learn_model.fit(all_train_preds, all_train_y)
         if save:
             pickle.dump(meta_learn_model, open(meta_filename, "wb"))
     # For test/inference predictions
+    print("Shape of results to be input to meta learner for predictions: ", np.vstack(results).T.shape)
     if X_syns[0].targettype == 'regression':
-        meta_pred = meta_learn_model.predict(np.concatenate(results, axis=1).reshape(-1, 1))
+        meta_pred = meta_learn_model.predict(np.vstack(results).T)
     else:
-        meta_pred = meta_learn_model.predict_proba(np.concatenate(results, axis=1).reshape(-1, 1))[:, 1]
+        meta_pred = meta_learn_model.predict_proba(np.vstack(results).T)[:, 1]
     # Add trained meta learner to trained_models lister
     trained_models.append(meta_learn_model)
     print("size of meta_pred: ", meta_pred.shape)

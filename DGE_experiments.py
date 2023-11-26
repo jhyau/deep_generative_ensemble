@@ -7,7 +7,7 @@ import pickle
 
 from synthcity.plugins.core.dataloader import GenericDataLoader
 
-from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking
+from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking, aggregate_stacking_folds
 
 ############################################################################################################
 # Model training. Predictive performance
@@ -278,6 +278,7 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
     keys = ['Oracle'] + y_naive_approaches + y_DGE_approaches[::-1] + ['DGE$_{20}$ (concat)']
     y_preds = dict(zip(keys, [[] for _ in keys]))
     stacking_y_preds = dict(zip(keys, [[] for _ in keys]))
+    actual_meta_preds = dict(zip(keys, [[] for _ in keys]))
     keys_for_plotting = ['Oracle', 'Naive'] + y_DGE_approaches[::-1]
     if include_concat:
         keys_for_plotting += ['DGE$_{20}$ (concat)']
@@ -302,6 +303,8 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
         stacking_pred, y_pred_mean, _, models = aggregate_stacking(
             X_test, X_oracle, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'oracle_{run_label}_', verbose=verbose)
 
+        meta_pred = aggregate_stacking_folds(X_test, X_oracle, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_oracle_{run_label}_', verbose=verbose)
+
         if d == 2 and plot and run == 0:
             _, _, _, contour = aggregate_imshow(
                 X_test, X_oracle, supervised_task, models=models, results_folder=results_folder, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename='oracle')
@@ -311,6 +314,7 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
 
         y_preds['Oracle'].append(y_pred_mean)
         stacking_y_preds['Oracle'].append(stacking_pred)
+        actual_meta_preds['Oracle'].append(meta_pred)
 
         # Single dataset single model
         for approach in y_naive_approaches:
@@ -321,6 +325,8 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
 
             stacking_pred, y_pred_mean, y_pred_std, models = aggregate_stacking(
                 X_test, X_syn_run, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_', verbose=verbose)
+
+            meta_pred = aggregate_stacking_folds(X_test, X_syn_run, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_naive_m{run}_', verbose=verbose)
 
             print("size of y_pred_mean: ", y_pred_mean.shape)
             print("size of stacking_pred: ", stacking_pred.shape)
@@ -334,43 +340,52 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
 
             y_preds[approach].append(y_pred_mean)
             stacking_y_preds[approach].append(stacking_pred)
+            actual_meta_preds[approach].append(meta_pred)
 
-        # DGE
         starting_dataset = run*n_models
-        models = None
-        for K, approach in zip(Ks, y_DGE_approaches):
-            stacking_pred, y_pred_mean, y_pred_std, models = aggregate_stacking(
-                X_test, X_syns[starting_dataset:starting_dataset+K], supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{run_label}_', verbose=verbose)
-
-            if d == 2 and plot and run == 0:
-                aggregate_imshow(
-                    X_test, X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, results_folder=results_folder, task_type=task_type, load=load, save=save, filename=f'DGE_K{K}_{run_label}_', baseline_contour=contour)
-
-            y_preds[approach].append(y_pred_mean)
-            stacking_y_preds[approach].append(stacking_pred)
-
-            # for plotting calibration and confidence curves later
-            if run == 0 and plot:
-                y_preds_for_plotting[approach] = y_pred_mean
-
         # Data aggregated
         #X_syn_cat = pd.concat([X_syns[i].dataframe() for i in range(starting_dataset, starting_dataset+20)], axis=0)
         X_syn_cat = pd.concat([X_syns[i].dataframe() for i in range(starting_dataset, starting_dataset+n_models)], axis=0)
         X_syn_cat = GenericDataLoader(X_syn_cat, target_column="target")
         X_syn_cat.targettype = X_syns[0].targettype
-        X_syn_cat = [X_syn_cat]
+        X_syn_cat_list = [X_syn_cat]
         stacking_pred, y_pred_mean, _, _ = aggregate_stacking(
-            X_test, X_syn_cat, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'concat_run{run}', verbose=verbose)
+            X_test, X_syn_cat_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'concat_run{run}', verbose=verbose)
+
+        meta_pred = aggregate_stacking_folds(
+            X_test, X_syn_cat_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_concat_run{run}', verbose=verbose)
 
         if include_concat and run == 0 and plot:
             y_preds_for_plotting['DGE$_{20}$ (concat)'] = y_pred_mean
 
         if plot and d == 2 and run==0:
-            aggregate_imshow(X_test, X_syn_cat * n_models, supervised_task, models=None, results_folder=results_folder, workspace_folder=workspace_folder,
+            aggregate_imshow(X_test, X_syn_cat_list * n_models, supervised_task, models=None, results_folder=results_folder, workspace_folder=workspace_folder,
                                 task_type=task_type, load=load, save=save, filename=f'concat_all', baseline_contour=contour)
 
         y_preds['DGE$_{20}$ (concat)'].append(y_pred_mean)
         stacking_y_preds['DGE$_{20}$ (concat)'].append(stacking_pred)
+        actual_meta_preds['DGE$_{20}$ (concat)'].append(meta_pred)
+
+        # DGE modified to allow for stacking ensemble meta learner, so each downstream classifier needs to be trained on the same dataset, use concatenated synthetic dataset
+        models = None
+        for K, approach in zip(Ks, y_DGE_approaches):
+            syn_list = [X_syn_cat] * K
+            stacking_pred, y_pred_mean, y_pred_std, models = aggregate_stacking(
+                X_test, syn_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{run_label}_', verbose=verbose)
+
+            meta_pred = aggregate_stacking_folds(X_test, syn_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_DGE_{run_label}_', verbose=verbose)
+
+            if d == 2 and plot and run == 0:
+                aggregate_imshow(
+                    X_test, syn_list, supervised_task, models=models, workspace_folder=workspace_folder, results_folder=results_folder, task_type=task_type, load=load, save=save, filename=f'DGE_K{K}_{run_label}_', baseline_contour=contour)
+
+            y_preds[approach].append(y_pred_mean)
+            stacking_y_preds[approach].append(stacking_pred)
+            actual_meta_preds[approach].append(meta_pred)
+
+            # for plotting calibration and confidence curves later
+            if run == 0 and plot:
+                y_preds_for_plotting[approach] = y_pred_mean
 
 
     # Evaluation
@@ -429,14 +444,22 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
     meta_scores_mean = {}
     meta_scores_std = {}
     meta_scores_all = []
+
+    actual_stacking_folds_mean = {}
+    actual_stacking_folds_std = {}
+    actual_stacking_folds_all = []
     for approach in y_preds.keys():
         scores = []
         meta_scores = []
+        actual_stacking_folds_scores = []
         for y_pred in y_preds[approach]:
             scores.append(compute_metrics(y_true, y_pred, X_test.targettype))
         
         for meta_y_pred in stacking_y_preds[approach]:
             meta_scores.append(compute_metrics(y_true, meta_y_pred, X_test.targettype))
+
+        for folds_y_pred in actual_meta_preds[approach]:
+            actual_stacking_folds_scores.append(compute_metrics(y_true, folds_y_pred, X_test.targettype))
 
         scores = pd.concat(scores, axis=0)
         scores_mean[approach] = np.mean(scores, axis=0)
@@ -451,6 +474,13 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
         meta_scores['Approach'] = approach
         meta_scores_all.append(meta_scores)
 
+        # For stacking ensemble with folds
+        actual_stacking_folds_scores = pd.concat(actual_stacking_folds_scores, axis=0)
+        actual_stacking_folds_mean[approach] = np.mean(actual_stacking_folds_scores, axis=0)
+        actual_stacking_folds_std[approach] = np.std(actual_stacking_folds_scores, axis=0)
+        actual_stacking_folds_scores['Approach'] = approach
+        actual_stacking_folds_all.append(meta_scores)
+
     scores_all = pd.concat(scores_all, axis=0)
     scores_mean = pd.DataFrame.from_dict(
         scores_mean, orient='index', columns=scores.columns.drop('Approach'))
@@ -462,7 +492,13 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
     meta_scores_mean = pd.DataFrame.from_dict(meta_scores_mean, orient='index', columns=meta_scores.columns.drop('Approach'))
     meta_scores_std = pd.DataFrame.from_dict(meta_scores_std, orient='index', columns=meta_scores.columns.drop('Approach'))
 
-    return scores_mean, scores_std, scores_all, meta_scores_mean, meta_scores_std, meta_scores_all
+    # For stacking ensemble with folds and meta learner
+    # For meta learner results
+    actual_stacking_folds_all = pd.concat(actual_stacking_folds_all, axis=0)
+    actual_stacking_folds_mean = pd.DataFrame.from_dict(actual_stacking_folds_mean, orient='index', columns=actual_stacking_folds_scores.columns.drop('Approach'))
+    actual_stacking_folds_std = pd.DataFrame.from_dict(actual_stacking_folds_std, orient='index', columns=actual_stacking_folds_scores.columns.drop('Approach'))
+
+    return scores_mean, scores_std, scores_all, meta_scores_mean, meta_scores_std, meta_scores_all, actual_stacking_folds_mean, actual_stacking_folds_std, actual_stacking_folds_all
 
 ##############################################################################################################
 
