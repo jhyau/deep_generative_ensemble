@@ -7,7 +7,7 @@ import pickle
 
 from synthcity.plugins.core.dataloader import GenericDataLoader
 
-from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve
+from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking
 
 ############################################################################################################
 # Model training. Predictive performance
@@ -266,6 +266,8 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
     print("n_models: ", n_models)
     print("num_runs: ", num_runs)
     print("list size of synthetic datasets: ", len(X_syns))
+    print("mixed_models: ", mixed_models)
+    print("meta_model: ", meta_model)
 
     if num_runs > 1 and verbose:
         print('Computing means and stds')
@@ -352,7 +354,8 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
                 y_preds_for_plotting[approach] = y_pred_mean
 
         # Data aggregated
-        X_syn_cat = pd.concat([X_syns[i].dataframe() for i in range(starting_dataset, starting_dataset+20)], axis=0)
+        #X_syn_cat = pd.concat([X_syns[i].dataframe() for i in range(starting_dataset, starting_dataset+20)], axis=0)
+        X_syn_cat = pd.concat([X_syns[i].dataframe() for i in range(starting_dataset, starting_dataset+n_models)], axis=0)
         X_syn_cat = GenericDataLoader(X_syn_cat, target_column="target")
         X_syn_cat.targettype = X_syns[0].targettype
         X_syn_cat = [X_syn_cat]
@@ -425,7 +428,7 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
     print("prediction keys/approaches: ", y_preds.keys())
     meta_scores_mean = {}
     meta_scores_std = {}
-    meta_scores_all - []
+    meta_scores_all = []
     for approach in y_preds.keys():
         scores = []
         meta_scores = []

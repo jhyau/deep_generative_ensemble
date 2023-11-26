@@ -106,6 +106,7 @@ def get_synthetic_data(X_gt,
 
         # Load data from disk if it exists and load_syn is True
         if os.path.exists(filename) and load_syn:
+            print("Found existing synthetic dataset. Loading...")
             X_syn = pickle.load(open(filename, "rb"))
 
             if len(X_syn)<nsyn:
@@ -301,6 +302,7 @@ def get_synthetic_data_with_multiple_gen_models(X_gt,
 
         # Load data from disk if it exists and load_syn is True
         if os.path.exists(filename) and load_syn:
+            print("Found existing dataset. Loading...")
             X_syn = pickle.load(open(filename, "rb"))
 
             if len(X_syn)<nsyn:

@@ -359,9 +359,11 @@ def supervised_task_stacking(X_gt, X_syn, model=None, model_type='mlp', verbose=
 
     print("supervised task: ", X_gt.targettype)
     print("model type: ", model_type)
+    X, y = X_syn.unpack(as_numpy=True)
     if type(model) == str or model is None:
+        print("initializing new model in supervised task stacking")
         model = init_model(model_type, X_syn.targettype)
-        X, y = X_syn.unpack(as_numpy=True)
+        #X, y = X_syn.unpack(as_numpy=True)
         model.fit(X, y.reshape(-1, 1))
         
     if X_gt.targettype == 'regression':
@@ -371,7 +373,7 @@ def supervised_task_stacking(X_gt, X_syn, model=None, model_type='mlp', verbose=
     else:
         train_pred = model.predict_proba(X)[:, 1]
         pred = model.predict_proba(X_gt.unpack(as_numpy=True)[0])[:, 1]    
-    return train_pred, y.reshape(-1,1), pred, model
+    return train_pred.reshape(-1,1), y.reshape(-1,1), pred, model
 
 
 def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, models=None, task_type='', load=True, save=True, workspace_folder=None, filename='', verbose=False):
@@ -408,8 +410,10 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
                 print(f'Saving model as {full_filename} in stacking aggregate')
 
             if os.path.exists(full_filename) and load:
+                print("loading existing model in aggregate stacking...")
                 model = pickle.load(open(full_filename, "rb"))
             else:
+                print("training new model in aggregate stacking...")
                 model = None
                 if verbose:
                     print(f'Train model {i+1}/{len(X_syns)}')
@@ -432,24 +436,31 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
         if models is None and save:
             pickle.dump(model, open(full_filename, "wb"))
 
+    print("res size: ", res.shape)
+    print("train_label shape: ", train_label.shape)
     # After training the len(X_syns) of downstream models, need to train the meta learning model
     meta_filename = f'{fileroot}_{filename}_meta_learner.pkl'
     if os.path.exists(meta_filename) and load:
+        print("loading existing meta learning model...")
         meta_learn_model = pickle.load(open(meta_filename, "rb"))
     else:
+        print("training meta learning model...")
         meta_learn_model = init_model(meta_model, X_syns[0].targettype)
-        # For training, pass along trained model's outputs for each trained model, concatenate them all into one array, and train data label
-        all_train_preds = np.concatenate(train_results, axis=0)
-        all_train_y = np.concatenate(train_labels, axis=0)
+        # For training, pass along trained model's outputs for each trained model, concatenate them all into one array, and train data label. Reshape bc only one feature in preds
+        all_train_preds = np.concatenate(train_results, axis=0).reshape(-1, 1)
+        all_train_y = np.concatenate(train_labels, axis=0).reshape(-1,1)
         print("size of all synthetic train data pred results from downstream model: ", all_train_preds.shape)
+        print("size of all synthetic train data y: ", all_train_y.shape)
         meta_learn_model.fit(all_train_preds, all_train_y)
         if save:
             pickle.dump(meta_learn_model, open(meta_filename, "wb"))
     # For test/inference predictions
     if X_syns[0].targettype == 'regression':
-        meta_pred = meta_learn_model.predict(np.concatenate(results, axis=0))
+        meta_pred = meta_learn_model.predict(np.concatenate(results, axis=1).reshape(-1, 1))
     else:
-        meta_pred = meta_learn_model.predict_proba(np.concatenate(results, axis=0))[:, 1]
+        meta_pred = meta_learn_model.predict_proba(np.concatenate(results, axis=1).reshape(-1, 1))[:, 1]
+    # Add trained meta learner to trained_models lister
+    trained_models.append(meta_learn_model)
     print("size of meta_pred: ", meta_pred.shape)
     print("size of one result in list of results: ", results[0].shape)
     return meta_pred, *meanstd(results), trained_models
