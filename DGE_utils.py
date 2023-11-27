@@ -364,10 +364,15 @@ def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=F
     print("In aggregate stacking folds")
     X, y = X_syns[0].unpack(as_numpy=True)
     if not mixed_models:
+        model_str = task_type
         estimators = []
         for i in range(len(X_syns)):
             estimators.append((f'{task_type}_{i}', init_model(task_type, X_syns[0].targettype)))
     else:
+        model_str = ''
+        for x in task_type:
+            model_str += x + "_"
+            
         estimators = []
         for i in range(len(X_syns)):
             # Cycle through the list of task type models
@@ -376,6 +381,13 @@ def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=F
             print("model in estimators stack: ", model_type)
             estimators.append((f'{model_type}_{i}', init_model(model_type, X_syns[0].targettype)))
 
+    fileroot = f'{workspace_folder}_stacking_folds/StackingClassifier_{model_str}_{cv}folds_{len(X_syns)}_classifiers_meta_{meta_model}'
+    if (save or load) and not os.path.exists(fileroot):
+        os.makedirs(fileroot)
+
+    full_filename = f'{fileroot}_{filename}_{len(X_syns)}_concat.pkl'
+
+    print("StackingClassifier full path: ", full_filename)
     if X_gt.targettype == 'regression':
         stack_method = 'predict'
     else:
@@ -384,8 +396,18 @@ def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=F
         verbosity = 1
     else:
         verbosity = 0
-    clf = StackingClassifier(estimators=estimators, final_estimator=init_model(meta_model, X_gt.targettype), cv=cv, stack_method=stack_method, verbose=verbosity)
-    clf.fit(X, y.reshape(-1,1))
+    
+    if os.path.exists(full_filename) and load:
+        print("load existing StackingClassifier ensemble of estimators")
+        clf = pickle.load(open(full_filename, "rb"))
+    else:
+        print("training new StackingClassifier ensemble")
+        clf = StackingClassifier(estimators=estimators, final_estimator=init_model(meta_model, X_gt.targettype), cv=cv, stack_method=stack_method, verbose=verbosity)
+        clf.fit(X, y.reshape(-1,1))
+
+    if not os.path.exists(full_filename) and save:
+        pickle.dump(clf, open(full_filename, "wb"))
+
     if X_gt.targettype == 'regression':
         meta_pred = clf.predict(X_gt.unpack(as_numpy=True)[0])
     else:
@@ -432,8 +454,8 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
     trained_models = []
     fileroot = f'{workspace_folder}_stacking/{task.__name__}_{task_type}_stacking_{len(X_syns)}_classifiers'
 
-    if (save or load) and not os.path.exists(fileroot):
-        os.makedirs(fileroot)
+    #if (save or load) and not os.path.exists(fileroot):
+    #    os.makedirs(fileroot)
 
     for i in range(len(X_syns)):
         if mixed_models:
@@ -442,6 +464,9 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
             model_type = task_type[index]
             fileroot = f'{workspace_folder}_mixed_stacking/{task.__name__}_{model_type}_mix_stacking_{len(X_syns)}_classifiers'
 
+        if (save or load) and not os.path.exists(fileroot):
+            os.makedirs(fileroot)
+        
         full_filename = f'{fileroot}_{filename}_{i}.pkl'
         if models is None:
             if verbose:
