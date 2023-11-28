@@ -393,7 +393,7 @@ def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=F
     else:
         stack_method = 'predict_proba'
     if verbose:
-        verbosity = 1
+        verbosity = 3
     else:
         verbosity = 0
     

@@ -211,6 +211,31 @@ def get_real_and_synthetic(dataset,
     return X_gt, X_syns
 
 
+def generate_synthetic_boosting(model_name, n_models, save, verbose, X_train, i, filename):
+    """
+    Train generative model and generate synthetic dataset, with boosting to allow for different weights on train examples
+    """
+    print("Boost generative model training and synthetic data generation")
+    if verbose:
+        print(f"Training model {i+1}/{n_models}")
+
+    reproducibility.enable_reproducible_results(random_state=i)
+    if '_deep' in model_name:
+        syn_model = Plugins().get(model_name.replace('_deep', ''), discriminator_n_layers_hidden=3, generator_n_layers_hidden=3)
+    elif '_shallow' in model_name:
+        syn_model = Plugins().get(model_name.replace('_shallow', ''), discriminator_n_layers_hidden=1, generator_n_layers_hidden=1)
+    elif '_smallest' in model_name:
+        syn_model = Plugins().get(model_name.replace('_smallest', ''), discriminator_n_layers_hidden=1, generator_n_layers_hidden=1, generator_n_units_hidden=100, discriminator_n_units_hidden=100)
+    else:
+        syn_model = Plugins().get(model_name)
+    syn_model.fit(X_train)
+    X_syn = syn_model.generate(count=20000) # we won't need more in any experiment
+
+            # save X_syn to disk as pickle
+    if save:
+        pickle.dump(X_syn, open(filename, "wb"))
+
+
 def get_synthetic_data_without_data_leak_naive(X_gt,
                        model_name,
                        n_models,

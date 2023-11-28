@@ -8,6 +8,22 @@ import pickle
 from synthcity.plugins.core.dataloader import GenericDataLoader
 
 from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking, aggregate_stacking_folds
+from DGE_data import get_real_and_synthetic
+
+############################################################################################################
+# Boosting synthetic data generations from downstream task performance
+
+def boosting_DGE(dataset, num_iter=10, save=True, load=True, verbose=True):
+    """Apply boosting to DGE
+    1. initialize all weights to be equal for each train example
+    2. train generative model
+    3. generate synthetic dataset
+    4. train downstream model on synthetic dataset
+    5. evaluate on real train data
+    6. adjust the weights for the train data, giving higher weight to the examples that did not do well in downstream model, and iterate
+    """
+    print("Boosting DGE")
+
 
 ############################################################################################################
 # Model training. Predictive performance
