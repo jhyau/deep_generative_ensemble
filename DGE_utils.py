@@ -7,7 +7,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.neural_network import MLPClassifier, MLPRegressor    
 from synthcity.plugins.core.dataloader import GenericDataLoader
 from synthcity.utils import reproducibility
-from sklearn.ensemble import StackingClassifier
+from sklearn.ensemble import StackingClassifier, StackingRegressor
 
 
 import numpy as np
@@ -356,7 +356,7 @@ def aggregate(X_gt, X_syns, task, models=None, task_type='', load=True, save=Tru
     return *meanstd(results), trained_models
 
 
-def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=False, models=None, task_type='', load=True, save=True, workspace_folder=None, filename='', verbose=False, cv=5, stack_method='predict_proba'):
+def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=False, estimators_list=None, task_type='', load=True, save=True, workspace_folder=None, filename='', verbose=False, cv=5, stack_method='predict_proba'):
     """
     X_syns is a list of repeated datasets (all datasets in the list are the same)
     default if 5 folds
@@ -379,7 +379,13 @@ def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=F
             index = i % len(task_type)
             model_type = task_type[index]
             print("model in estimators stack: ", model_type)
-            estimators.append((f'{model_type}_{i}', init_model(model_type, X_syns[0].targettype)))
+            if estimators_list is not None:
+                # Access the named_estimators_, Bunch type in sklearn
+                # a.named_estimators_['deepish_mlp_0']
+                name = f'{model_type}_{i}'
+                estimators.append((name, estimators_list[name]))
+            else:
+                estimators.append((f'{model_type}_{i}', init_model(model_type, X_syns[0].targettype)))
 
     fileroot = f'{workspace_folder}_stacking_folds/StackingClassifier_{model_str}_{cv}folds_{len(X_syns)}_classifiers_meta_{meta_model}'
     if (save or load) and not os.path.exists(fileroot):
@@ -396,13 +402,20 @@ def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=F
         verbosity = 3
     else:
         verbosity = 0
+   
+    if estimators_list is not None:
+        print("Using trained/fitted estimators...")
+        cv = "prefit"
     
     if os.path.exists(full_filename) and load:
         print("load existing StackingClassifier ensemble of estimators")
         clf = pickle.load(open(full_filename, "rb"))
     else:
-        print("training new StackingClassifier ensemble")
-        clf = StackingClassifier(estimators=estimators, final_estimator=init_model(meta_model, X_gt.targettype), cv=cv, stack_method=stack_method, verbose=verbosity)
+        print("training new StackingClassifier ensemble with cv: ", cv)
+        if X_gt.targettype == 'regression':
+            clf = StackingRegressor(estimators=estimators, final_estimator=init_model(meta_model, X_gt.targettype), cv=cv, stack_method=stack_method, verbose=verbosity)
+        else:
+            clf = StackingClassifier(estimators=estimators, final_estimator=init_model(meta_model, X_gt.targettype), cv=cv, stack_method=stack_method, verbose=verbosity)
         clf.fit(X, y.reshape(-1,1))
 
     if not os.path.exists(full_filename) and save:
@@ -412,7 +425,7 @@ def aggregate_stacking_folds(X_gt, X_syns, task, meta_model='lr', mixed_models=F
         meta_pred = clf.predict(X_gt.unpack(as_numpy=True)[0])
     else:
         meta_pred = clf.predict_proba(X_gt.unpack(as_numpy=True)[0])[:, 1]
-    return meta_pred
+    return meta_pred, clf.named_estimators_
 
 
 def supervised_task_stacking(X_gt, X_syn, model=None, model_type='mlp', verbose=False):
@@ -483,6 +496,7 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
                 seed = hash_str2int(full_filename)
                 reproducibility.enable_reproducible_results(random_state=seed)
         else:
+            print("models is not none, using passed in models...")
             model = models[i]
 
         if mixed_models:

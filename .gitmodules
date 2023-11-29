@@ -1,0 +1,3 @@
+[submodule "synthcity"]
+	path = synthcity
+	url = https://github.com/jhyau/synthcity.git

@@ -288,7 +288,12 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
     if num_runs > 1 and verbose:
         print('Computing means and stds')
 
-    Ks = [20, 10, 5]
+    #Ks = [20, 10, 5]
+    Ks = []
+    for k in [20, 10, 5]:
+        if k <= n_models:
+            Ks.append(k)
+    print("Ks to ensemble with: ", Ks)
     y_DGE_approaches = ['DGE$_{'+str(K)+'}$' for K in Ks]
     y_naive_approaches = ['Naive (S)', 'Naive (E)']
     keys = ['Oracle'] + y_naive_approaches + y_DGE_approaches[::-1] + ['DGE$_{20}$ (concat)']
@@ -319,7 +324,7 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
         stacking_pred, y_pred_mean, _, models = aggregate_stacking(
             X_test, X_oracle, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'oracle_{run_label}_', verbose=verbose)
 
-        meta_pred = aggregate_stacking_folds(X_test, X_oracle, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_oracle_{run_label}_', verbose=verbose)
+        meta_pred, trained_estimators = aggregate_stacking_folds(X_test, X_oracle, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, estimators_list=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_oracle_{run_label}_', verbose=verbose)
 
         if d == 2 and plot and run == 0:
             _, _, _, contour = aggregate_imshow(
@@ -342,7 +347,7 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
             stacking_pred, y_pred_mean, y_pred_std, models = aggregate_stacking(
                 X_test, X_syn_run, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_', verbose=verbose)
 
-            meta_pred = aggregate_stacking_folds(X_test, X_syn_run, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_naive_m{run}_', verbose=verbose)
+            meta_pred, trained_estimators = aggregate_stacking_folds(X_test, X_syn_run, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, estimators_list=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_naive_m{run}_', verbose=verbose)
 
             print("size of y_pred_mean: ", y_pred_mean.shape)
             print("size of stacking_pred: ", stacking_pred.shape)
@@ -368,8 +373,8 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
         stacking_pred, y_pred_mean, _, _ = aggregate_stacking(
             X_test, X_syn_cat_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'concat_run{run}', verbose=verbose)
 
-        meta_pred = aggregate_stacking_folds(
-            X_test, X_syn_cat_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_concat_run{run}', verbose=verbose)
+        meta_pred, trained_estimators = aggregate_stacking_folds(
+            X_test, X_syn_cat_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, estimators_list=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_concat_run{run}', verbose=verbose)
 
         if include_concat and run == 0 and plot:
             y_preds_for_plotting['DGE$_{20}$ (concat)'] = y_pred_mean
@@ -384,12 +389,13 @@ def predictive_experiment_stacking(X_gt, X_syns, n_models=20, task_type='mlp', m
 
         # DGE modified to allow for stacking ensemble meta learner, so each downstream classifier needs to be trained on the same dataset, use concatenated synthetic dataset
         models = None
+        estimators_list = None
         for K, approach in zip(Ks, y_DGE_approaches):
             syn_list = [X_syn_cat] * K
             stacking_pred, y_pred_mean, y_pred_std, models = aggregate_stacking(
                 X_test, syn_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{run_label}_', verbose=verbose)
 
-            meta_pred = aggregate_stacking_folds(X_test, syn_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_DGE_{run_label}_', verbose=verbose)
+            meta_pred, estimators_list = aggregate_stacking_folds(X_test, syn_list, supervised_task_stacking, meta_model=meta_model, mixed_models=mixed_models, estimators_list=estimators_list, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'actual_stacking_ensemble_folds_DGE_{run_label}_', verbose=verbose)
 
             if d == 2 and plot and run == 0:
                 aggregate_imshow(
