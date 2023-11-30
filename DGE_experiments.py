@@ -1,28 +1,105 @@
 import matplotlib.pyplot as plt
 from sklearn.calibration import calibration_curve
+from sklearn.metrics import accuracy_score, mean_squared_error, mean_absolute_error
 import pandas as pd
 import numpy as np
 import os
 import pickle
+from scipy.special import xlogy
 
 from synthcity.plugins.core.dataloader import GenericDataLoader
 
 from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking, aggregate_stacking_folds
-from DGE_data import get_real_and_synthetic
+from DGE_data import get_real_and_synthetic, load_real_data, generate_synthetic_boosting
 
 ############################################################################################################
 # Boosting synthetic data generations from downstream task performance
 
-def boosting_DGE(dataset, num_iter=10, save=True, load=True, verbose=True):
+def boosting_DGE(dataset, model_name, num_iter=20, boosting="SAMME.R", p_train=0.8, max_n=2000, reduce_to=20000, task_type='mlp', workspace_folder='workspace', save=True, load=True, verbose=True):
     """Apply boosting to DGE
-    1. initialize all weights to be equal for each train example
+    1. initialize all weights to be equal for each train example, 1/num examples
     2. train generative model
     3. generate synthetic dataset
     4. train downstream model on synthetic dataset
     5. evaluate on real train data
     6. adjust the weights for the train data, giving higher weight to the examples that did not do well in downstream model, and iterate
+    7. keep track of the "significance" weight for each iteration
     """
     print("Boosting DGE")
+    # Default learning rate for ctgan in training is 1e-3
+    lr = 1e-3
+    data_folder = os.path.join("synthetic_data",dataset,model_name)
+    X_gt = load_real_data(dataset, p_train=p_train, max_n=max_n, reduce_to=reduce_to)
+    X_train, X_test = X_gt.train(), X_gt.test()
+    n_train = X_train.shape[0]
+    n_classes = len(np.unique(X_train.dataframe()['target'].values))
+    d = X_test.unpack(as_numpy=True)[0].shape[1]
+    X_test.targettype = X_gt.targettype
+    print("targettype: ", X_gt.targettype)
+    if not X_gt.targettype in ['regression', 'classification']:
+        raise ValueError('X_gt.targettype must be regression or classification.')
+    
+    significance = []
+    # Keep track of the synthetic datasets and trained downstream models
+    X_syns = []
+    trained_downstream_models = []
+
+    # Initialize all data weights to be equal: for first iteration, don't pass in any data weights
+    init_weights = (1 / n_train) * np.ones(n_train)
+    data_weights = None
+
+    for i in range(num_iter):
+        # TODO: need to make sure that in each iterative step, the weights are corresponding to the examples! e.g. no shuffling or reordering of the examples, or need to make sure to keep indices consistent
+        # Train generative model and generate synthetic dataset
+        print(f"Run: {i} / {num_iter}")
+        filename = f"{data_folder}/Xsyn_n{n_train}_seed{i}.pkl"
+        X_syn = generate_synthetic_boosting(model_name, num_iter, save, verbose, X_train, i, filename, data_weights=data_weights)
+        X_syns.append(X_syn)
+
+        # Train downstream model on synthetic dataset and evaluate on real train dataset
+        run_label = f'run_{i}'
+        y_pred_mean, y_pred_std, models = aggregate(
+                X_train, [X_syn], supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{i}_', verbose=verbose)
+        
+        assert(len(models) == 1)
+        trained_downstream_models.extend(models)
+
+        # Identify the examples that were incorrect
+        y_true = X_train.dataframe()['target'].values
+        #scores = compute_metrics(y_true, y_pred, X_test.targettype)
+        if X_gt.targettype == "classification":
+            acc = accuracy_score(y_true, y_pred_mean>0.5)
+            print(f"Run {i} accuracy: ", acc)
+            bool_y_pred_mean = y_pred_mean>0.5
+            incorrect = y_true != bool_y_pred_mean
+        elif X_gt.targettype == 'regression':
+            mse = np.sqrt(mean_squared_error(y_true, y_pred_mean))
+            mae = mean_absolute_error(y_true, y_pred_mean)
+        else:
+            raise Exception("unknown task not implemented yet")
+        
+        # Calculate significance weight for this iteration, but for SAMME.R, all models have equal weight of 1
+        # SAMME: significance_weight = learning_rate * log ((1 - total_error) / total_error) + log(n_classes - 1) where total_error = sum of weights of incorrect samples
+        # SAMME.R: boost weight, no model weight: (n_classes - 1)*(log x - (1/n_classes) * sum(log x_hat))
+        if boosting == "SAMME.R":
+            # y coding: y_k = 1 if c==k else -1 / (n_classes - 1) where c,k are indices with c being index corresponding to true class label
+            y_codes = np.array([-1.0 / (n_classes - 1), 1.0])
+            y_coding = y_codes.take(np.unique(y_true) == y_true[:, np.newaxis])
+            estimator_weight = -1.0 * lr * ((n_classes - 1.0) / n_classes) * xlogy(y_coding, y_pred_mean).sum(axis=1)  
+        
+
+        # Adjust weights based on which examples were correct or incorrect and normalize
+        # new weight for incorrect sample = orig_weights * e^(significance)
+        # new weight for correct sample: orig_weight * e^(-significant)
+        if data_weights is None:
+            # bitwise or to boost data weights
+            data_weights = init_weights * np.exp(estimator_weight * ((init_weights > 0) | (estimator_weight < 0)))
+        else:
+            data_weights *= np.exp(estimator_weight * ((data_weights > 0) | (estimator_weight < 0)))
+        print("data_weights: ", data_weights)
+    
+    # TODO: add compute metrics and evaluation
+
 
 
 ############################################################################################################
