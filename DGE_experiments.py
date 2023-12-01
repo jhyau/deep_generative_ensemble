@@ -132,7 +132,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                     # bitwise or to boost data weights
                     data_weights = init_weights * np.exp(estimator_weight * ((init_weights > 0) | (estimator_weight < 0)))
                 else:
-                    data_weights = np.exp(np.log(data_weights) + estimator_weight * incorrect * (data_weights > 0)
+                    data_weights = np.exp(np.log(data_weights) + estimator_weight * incorrect * (data_weights > 0))
             
             # Normalize the weights
             data_weights /= np.sum(data_weights)
@@ -193,7 +193,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 model = each_run_trained_downstream_models[run][j]
                 if X_gt.targettype == 'regression':
                     pred = model.predict(X_test.unpack(as_numpy=True)[0])
-                else
+                else:
                     pred = model.predict_proba(X_test.unpack(as_numpy=True)[0])[:, 1]
                 y_hat.append(pred)
             print(f"shape of {K} DGE y predictions: ", y_hat[0].shape)
