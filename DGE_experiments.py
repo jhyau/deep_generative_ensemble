@@ -9,13 +9,13 @@ from scipy.special import xlogy
 
 from synthcity.plugins.core.dataloader import GenericDataLoader
 
-from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking, aggregate_stacking_folds
+from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking, aggregate_stacking_folds, weighted_meanstd
 from DGE_data import get_real_and_synthetic, load_real_data, generate_synthetic_boosting
 
 ############################################################################################################
 # Boosting synthetic data generations from downstream task performance
 
-def boosting_DGE(dataset, model_name, num_iter=20, boosting="SAMME.R", p_train=0.8, max_n=2000, reduce_to=20000, task_type='mlp', workspace_folder='workspace', save=True, load=True, verbose=True):
+def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.R", p_train=0.8, max_n=2000, nsyn=None, reduce_to=20000, task_type='mlp', workspace_folder='workspace', save=True, load=True, verbose=True):
     """Apply boosting to DGE
     1. initialize all weights to be equal for each train example, 1/num examples
     2. train generative model
@@ -27,78 +27,215 @@ def boosting_DGE(dataset, model_name, num_iter=20, boosting="SAMME.R", p_train=0
     """
     print("Boosting DGE")
     # Default learning rate for ctgan in training is 1e-3
+    n_models = num_iter
+    # Load real data
     lr = 1e-3
     data_folder = os.path.join("synthetic_data",dataset,model_name)
     X_gt = load_real_data(dataset, p_train=p_train, max_n=max_n, reduce_to=reduce_to)
+    if dataset == 'covid':
+        X_gt['target'] = (X_gt['target']-1).astype(bool)
+
     X_train, X_test = X_gt.train(), X_gt.test()
     n_train = X_train.shape[0]
+    if nsyn is None:
+        nsyn = n_train
+
     n_classes = len(np.unique(X_train.dataframe()['target'].values))
     d = X_test.unpack(as_numpy=True)[0].shape[1]
     X_test.targettype = X_gt.targettype
     print("targettype: ", X_gt.targettype)
     if not X_gt.targettype in ['regression', 'classification']:
         raise ValueError('X_gt.targettype must be regression or classification.')
-    
-    significance = []
-    # Keep track of the synthetic datasets and trained downstream models
-    X_syns = []
-    trained_downstream_models = []
+   
+    each_run_significance = []
+    each_run_X_syns = []
+    each_run_trained_downstream_models = []
+    reproducible_state = 0
+    for run in range(num_runs):
+        print(f"Run {run} / {num_runs}")
+        significance = []
+        # Keep track of the synthetic datasets and trained downstream models
+        X_syns = []
+        trained_downstream_models = []
 
-    # Initialize all data weights to be equal: for first iteration, don't pass in any data weights
-    init_weights = (1 / n_train) * np.ones(n_train)
-    data_weights = None
+        # Initialize all data weights to be equal: for first iteration, don't pass in any data weights
+        init_weights = (1 / n_train) * np.ones(n_train)
+        data_weights = None
 
-    for i in range(num_iter):
-        # TODO: need to make sure that in each iterative step, the weights are corresponding to the examples! e.g. no shuffling or reordering of the examples, or need to make sure to keep indices consistent
-        # Train generative model and generate synthetic dataset
-        print(f"Run: {i} / {num_iter}")
-        filename = f"{data_folder}/Xsyn_n{n_train}_seed{i}.pkl"
-        X_syn = generate_synthetic_boosting(model_name, num_iter, save, verbose, X_train, i, filename, data_weights=data_weights)
-        X_syns.append(X_syn)
+        for i in range(num_iter):
+            # Need to make sure that in each iterative step, the weights are corresponding to the examples! e.g. no shuffling or reordering of the examples, or need to make sure to keep indices consistent
+            # Train generative model and generate synthetic dataset
+            print(f"Boosting iter: {i} / {num_iter}")
+            filename = f"{data_folder}/Xsyn_n{n_train}_seed{i}_boosting_run{run}.pkl"
+            X_syn = generate_synthetic_boosting(model_name, num_iter, save, verbose, X_train, reproducible_state, filename, data_weights=data_weights)
+            X_syn = GenericDataLoader(X_syn[:nsyn], target_column="target")
+            X_syn.targettype = X_gt.targettype
+            X_syns.append(X_syn)
+            X_syns[i].dataset = dataset
+            X_syns[i].targettype = X_gt.targettype
+            if dataset == 'covid':
+                X_syns[i]['target'] = (X_syns[i]['target']-1).astype(bool)
+            reproducible_state += 1
 
-        # Train downstream model on synthetic dataset and evaluate on real train dataset
-        run_label = f'run_{i}'
-        y_pred_mean, y_pred_std, models = aggregate(
-                X_train, [X_syn], supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{i}_', verbose=verbose)
+            # Train downstream model on synthetic dataset and evaluate on real train dataset
+            run_label = f'run{run}_boosting_iter{i}'
+            y_pred_mean, y_pred_std, models = aggregate(
+                    X_train, [X_syn], supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{i}_', verbose=verbose)
+            
+            assert(len(models) == 1)
+            trained_downstream_models.extend(models)
+
+            # Identify the examples that were incorrect
+            y_true = X_train.dataframe()['target'].values
+            #scores = compute_metrics(y_true, y_pred, X_test.targettype)
+            if X_gt.targettype == "classification":
+                acc = accuracy_score(y_true, y_pred_mean>0.5)
+                print(f"Boosting iter {i} accuracy: ", acc)
+                bool_y_pred_mean = y_pred_mean>0.5
+                incorrect = y_true != bool_y_pred_mean
+            elif X_gt.targettype == 'regression':
+                mse = np.sqrt(mean_squared_error(y_true, y_pred_mean))
+                mae = mean_absolute_error(y_true, y_pred_mean)
+            else:
+                raise Exception("unknown task not implemented yet")
+            
+            # Calculate significance weight for this iteration, but for SAMME.R, all models have equal weight of 1
+            # SAMME: significance_weight = learning_rate * log ((1 - total_error) / total_error) + log(n_classes - 1) where total_error = sum of weights of incorrect samples
+            # SAMME.R: boosts weighted prob estimates to update the model instead of classification itself: (n_classes - 1)*(log x - (1/n_classes) * sum(log x_hat))
+            if boosting == "SAMME.R":
+                # y coding: y_k = 1 if c==k else -1 / (n_classes - 1) where c,k are indices with c being index corresponding to true class label
+                y_codes = np.array([-1.0 / (n_classes - 1), 1.0])
+                y_coding = y_codes.take(np.unique(y_true) == y_true[:, np.newaxis])
+                estimator_weight = -1.0 * lr * ((n_classes - 1.0) / n_classes) * xlogy(y_coding, y_pred_mean).sum(axis=1)
+                significance.append(1)
+                
+                # Adjust weights
+                if data_weights is None:
+                    # bitwise or to boost data weights
+                    data_weights = init_weights * np.exp(estimator_weight * ((init_weights > 0) | (estimator_weight < 0)))
+                else:
+                    data_weights *= np.exp(estimator_weight * ((data_weights > 0) | (estimator_weight < 0)))
+            else:
+                # For SAMME
+                # Sum up the weights of the incorrect examples
+                if data_weights is None:
+                    estimator_error = np.mean(np.average(incorrect, weights=init_weights, axis=0))
+                else:
+                    estimator_error = np.mean(np.average(incorrect, weights=data_weights, axis=0))
+                estimator_weight = lr * (np.log((1.0 - estimator_error) / estimator_error) + np.log(n_classes - 1.0))
+                significance.append(estimator_weight)
+
+                # Adjust weights based on which examples were correct or incorrect and normalize
+                # new weight for incorrect sample = orig_weights * e^(significance)
+                # new weight for correct sample: orig_weight * e^(-significant)
+                if data_weights is None:
+                    # bitwise or to boost data weights
+                    data_weights = init_weights * np.exp(estimator_weight * ((init_weights > 0) | (estimator_weight < 0)))
+                else:
+                    data_weights = np.exp(np.log(data_weights) + estimator_weight * incorrect * (data_weights > 0)
+            
+            # Normalize the weights
+            data_weights /= np.sum(data_weights)
+            print("normalized data_weights: ", data_weights)
         
-        assert(len(models) == 1)
-        trained_downstream_models.extend(models)
+        # Add to list of runs
+        print(f"Finished run {run} / {num_runs}")
+        each_run_significance.append(significance)
+        each_run_X_syns.append(X_syns)
+        each_run_trained_downstream_models.append(trained_downstream_models)
+    # add compute metrics and final evaluation
+    print("Start final evaluation...")
+    #Ks = [20, 10, 5]
+    Ks = []
+    for k in [20, 10, 5]:
+        if k <= n_models:
+            Ks.append(k)
+    y_DGE_approaches = ['DGE$_{'+str(K)+'}$' for K in Ks]
+    y_naive_approaches = ['Naive (S)', 'Naive (E)']
+    keys = ['Oracle'] + y_naive_approaches + y_DGE_approaches[::-1] + ['DGE$_{20}$ (concat)']
+    y_preds = dict(zip(keys, [[] for _ in keys]))
+    keys_for_plotting = ['Oracle', 'Naive'] + y_DGE_approaches[::-1]
+    y_preds_for_plotting = dict(zip(keys_for_plotting, [None]*len(keys_for_plotting)))
 
-        # Identify the examples that were incorrect
-        y_true = X_train.dataframe()['target'].values
-        #scores = compute_metrics(y_true, y_pred, X_test.targettype)
-        if X_gt.targettype == "classification":
-            acc = accuracy_score(y_true, y_pred_mean>0.5)
-            print(f"Run {i} accuracy: ", acc)
-            bool_y_pred_mean = y_pred_mean>0.5
-            incorrect = y_true != bool_y_pred_mean
-        elif X_gt.targettype == 'regression':
-            mse = np.sqrt(mean_squared_error(y_true, y_pred_mean))
-            mae = mean_absolute_error(y_true, y_pred_mean)
-        else:
-            raise Exception("unknown task not implemented yet")
-        
-        # Calculate significance weight for this iteration, but for SAMME.R, all models have equal weight of 1
-        # SAMME: significance_weight = learning_rate * log ((1 - total_error) / total_error) + log(n_classes - 1) where total_error = sum of weights of incorrect samples
-        # SAMME.R: boost weight, no model weight: (n_classes - 1)*(log x - (1/n_classes) * sum(log x_hat))
-        if boosting == "SAMME.R":
-            # y coding: y_k = 1 if c==k else -1 / (n_classes - 1) where c,k are indices with c being index corresponding to true class label
-            y_codes = np.array([-1.0 / (n_classes - 1), 1.0])
-            y_coding = y_codes.take(np.unique(y_true) == y_true[:, np.newaxis])
-            estimator_weight = -1.0 * lr * ((n_classes - 1.0) / n_classes) * xlogy(y_coding, y_pred_mean).sum(axis=1)  
-        
+     # Oracle
+    X_oracle = X_gt.train()
+    X_oracle.targettype = X_syns[0].targettype
 
-        # Adjust weights based on which examples were correct or incorrect and normalize
-        # new weight for incorrect sample = orig_weights * e^(significance)
-        # new weight for correct sample: orig_weight * e^(-significant)
-        if data_weights is None:
-            # bitwise or to boost data weights
-            data_weights = init_weights * np.exp(estimator_weight * ((init_weights > 0) | (estimator_weight < 0)))
-        else:
-            data_weights *= np.exp(estimator_weight * ((data_weights > 0) | (estimator_weight < 0)))
-        print("data_weights: ", data_weights)
-    
-    # TODO: add compute metrics and evaluation
+    X_oracle = [X_oracle] * n_models
+    for run in range(num_runs):
+
+        run_label = f'run_{run}'
+
+        print("run: ", run)
+        # Oracle ensemble
+
+        y_pred_mean, _, models = aggregate(
+            X_test, X_oracle, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'oracle_{run_label}_', verbose=verbose)
+        y_preds['Oracle'].append(y_pred_mean)
+
+        # Single dataset single model
+        for approach in y_naive_approaches:
+            # Get first synthetic dataset from each run
+            if approach == 'Naive (S)':
+                X_syn_run = [each_run_X_syns[run][0]]
+            else:
+                X_syn_run = [each_rn_X_syns[run][0]] * n_models
+
+            y_pred_mean, y_pred_std, models = aggregate(
+                X_test, X_syn_run, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_', verbose=verbose)
+            y_preds[approach].append(y_pred_mean)
+
+        # Boosted DGE
+        for K, approach in zip(Ks, y_DGE_approaches):
+            # Make prediction with each downstream model, then do weighted sum/avg
+            y_hat = []
+            for j in range(K):
+                model = each_run_trained_downstream_models[run][j]
+                if X_gt.targettype == 'regression':
+                    pred = model.predict(X_test.unpack(as_numpy=True)[0])
+                else
+                    pred = model.predict_proba(X_test.unpack(as_numpy=True)[0])[:, 1]
+                y_hat.append(pred)
+            print(f"shape of {K} DGE y predictions: ", y_hat[0].shape)
+            y_weighted_pred_mean, y_weighted_stds = weighted_meanstd(y_hat, each_run_significance[run])
+            print("weighted means: ", y_weighted_pred_mean)
+            y_preds[approach].append(y_weighted_pred_mean)
+
+        # Data aggregated
+        X_syn_cat = pd.concat([each_run_X_syns[run][i].dataframe() for i in range(n_models)], axis=0)
+        X_syn_cat = GenericDataLoader(X_syn_cat, target_column="target")
+        X_syn_cat.targettype = each_run_X_syns[run][0].targettype
+        X_syn_cat = [X_syn_cat]
+        y_pred_mean, _, _ = aggregate(
+            X_test, X_syn_cat, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'concat_run{run}', verbose=verbose)
+        y_preds['DGE$_{n_models}$ (concat)'].append(y_pred_mean)
+
+    # Evaluation
+    y_true = X_test.dataframe()['target'].values
+    # Compute metrics
+
+    scores_mean = {}
+    scores_std = {}
+
+    scores_all = []
+    for approach in y_preds.keys():
+        scores = []
+        for y_pred in y_preds[approach]:
+            scores.append(compute_metrics(y_true, y_pred, X_test.targettype))
+
+        scores = pd.concat(scores, axis=0)
+        scores_mean[approach] = np.mean(scores, axis=0)
+        scores_std[approach] = np.std(scores, axis=0)
+        scores['Approach'] = approach
+        scores_all.append(scores)
+
+    scores_all = pd.concat(scores_all, axis=0)
+    scores_mean = pd.DataFrame.from_dict(
+        scores_mean, orient='index', columns=scores.columns.drop('Approach'))
+    scores_std = pd.DataFrame.from_dict(
+        scores_std, orient='index', columns=scores.columns.drop('Approach'))
+
+    return scores_mean, scores_std, scores_all
 
 
 

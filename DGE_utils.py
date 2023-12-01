@@ -311,6 +311,12 @@ def meanstd(A):
         return np.mean(A, axis=0), np.std(A, axis=0)
 
 
+def weighted_meanstd(A, weights):
+    print("calculated weighted means/stds with numpy")
+    weighted_mean = np.average(A, weights=weights, axis=0)
+    weighted_varianace = np.average((A - weighted_mean)**2, weights=weights)
+    return weighted_mean, np.sqrt(weighted_variance)
+
 
 def aggregate(X_gt, X_syns, task, models=None, task_type='', load=True, save=True, workspace_folder=None, filename='', verbose=False):
     """

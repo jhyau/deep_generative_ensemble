@@ -16,6 +16,20 @@ $ pip install .
 ```
 This code uses the generative modelling library of Synthcity (https://github.com/vanderschaarlab/synthcity)
 
+To run the boosting logic, need to install the submodule version of Synthcity:
+
+```bash
+conda create -n syn python=3.8
+conda activate syn
+pip install -r requirements.txt
+```
+
+Navigate to the submodule Synthcity repo, then run
+
+```bash
+pip install -e .
+```
+
 If encounter some version issues or want to use a more updated Synthcity, can do this instead:
 
 ```bash
