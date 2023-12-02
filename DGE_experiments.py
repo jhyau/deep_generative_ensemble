@@ -166,7 +166,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             Ks.append(k)
     y_DGE_approaches = ['DGE$_{'+str(K)+'}$' for K in Ks]
     y_naive_approaches = ['Naive (S)', 'Naive (E)']
-    keys = ['Oracle'] + y_naive_approaches + y_DGE_approaches[::-1] + ['DGE$_{20}$ (concat)']
+    keys = ['Oracle'] + y_naive_approaches + y_DGE_approaches[::-1] + [f'DGE$_{n_models}$ (concat)']
     y_preds = dict(zip(keys, [[] for _ in keys]))
     keys_for_plotting = ['Oracle', 'Naive'] + y_DGE_approaches[::-1]
     y_preds_for_plotting = dict(zip(keys_for_plotting, [None]*len(keys_for_plotting)))
@@ -223,7 +223,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
         X_syn_cat = [X_syn_cat]
         y_pred_mean, _, _ = aggregate(
             X_test, X_syn_cat, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'concat_run{run}', verbose=verbose)
-        y_preds['DGE$_{n_models}$ (concat)'].append(y_pred_mean)
+        y_preds[f'DGE$_{n_models}$ (concat)'].append(y_pred_mean)
 
     # Evaluation
     y_true = X_test.dataframe()['target'].values
