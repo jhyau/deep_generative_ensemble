@@ -36,13 +36,17 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
         X_gt['target'] = (X_gt['target']-1).astype(bool)
 
     X_train, X_test = X_gt.train(), X_gt.test()
+    X_train.targettype = X_gt.targettype
+    X_test.targettype = X_gt.targettype
+    X_gt.dataset = dataset
+
     n_train = X_train.shape[0]
     if nsyn is None:
         nsyn = n_train
 
+    print(f"n_train: {n_train}, nsyn: {nsyn}")
     n_classes = len(np.unique(X_train.dataframe()['target'].values))
     d = X_test.unpack(as_numpy=True)[0].shape[1]
-    X_test.targettype = X_gt.targettype
     print("targettype: ", X_gt.targettype)
     if not X_gt.targettype in ['regression', 'classification']:
         raise ValueError('X_gt.targettype must be regression or classification.')
@@ -71,6 +75,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             X_syn = GenericDataLoader(X_syn[:nsyn], target_column="target")
             X_syn.targettype = X_gt.targettype
             X_syns.append(X_syn)
+            
             X_syns[i].dataset = dataset
             X_syns[i].targettype = X_gt.targettype
             if dataset == 'covid':
@@ -99,14 +104,20 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             else:
                 raise Exception("unknown task not implemented yet")
             
-            # Calculate significance weight for this iteration, but for SAMME.R, all models have equal weight of 1
+            # Calculate significance weight for this iteration, but for SAMME.R, all models have equal weight of 1. Instead, weight class probabilities
             # SAMME: significance_weight = learning_rate * log ((1 - total_error) / total_error) + log(n_classes - 1) where total_error = sum of weights of incorrect samples
             # SAMME.R: boosts weighted prob estimates to update the model instead of classification itself: (n_classes - 1)*(log x - (1/n_classes) * sum(log x_hat))
             if boosting == "SAMME.R":
+                print("boost with SAMME.R")
                 # y coding: y_k = 1 if c==k else -1 / (n_classes - 1) where c,k are indices with c being index corresponding to true class label
                 y_codes = np.array([-1.0 / (n_classes - 1), 1.0])
                 y_coding = y_codes.take(np.unique(y_true) == y_true[:, np.newaxis])
-                estimator_weight = -1.0 * lr * ((n_classes - 1.0) / n_classes) * xlogy(y_coding, y_pred_mean).sum(axis=1)
+                # For binary classification, y_pred_mean only predicts 1 prob instead of 2 prob (one per class)
+                #y_coding = y_codes.take(np.unique(y_true) == y_true)
+                y_pred_mean_newaxis = y_pred_mean[:, np.newaxis]
+                print("y_pred_mean_newaxis size: ", y_pred_mean_newaxis.shape)
+                print("y_coding size: ", y_coding.shape)
+                estimator_weight = -1.0 * lr * ((n_classes - 1.0) / n_classes) * xlogy(y_coding, y_pred_mean_newaxis).sum(axis=1)
                 significance.append(1)
                 
                 # Adjust weights
@@ -116,6 +127,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 else:
                     data_weights *= np.exp(estimator_weight * ((data_weights > 0) | (estimator_weight < 0)))
             else:
+                print("boost with SAMME")
                 # For SAMME
                 # Sum up the weights of the incorrect examples
                 if data_weights is None:
@@ -130,13 +142,15 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 # new weight for correct sample: orig_weight * e^(-significant)
                 if data_weights is None:
                     # bitwise or to boost data weights
-                    data_weights = init_weights * np.exp(estimator_weight * ((init_weights > 0) | (estimator_weight < 0)))
+                    data_weights = np.exp(np.log(init_weights) + estimator_weight * incorrect * (init_weights > 0))
                 else:
                     data_weights = np.exp(np.log(data_weights) + estimator_weight * incorrect * (data_weights > 0))
             
             # Normalize the weights
             data_weights /= np.sum(data_weights)
             print("normalized data_weights: ", data_weights)
+            print("are all weights equal?: ", np.sum(np.where(np.isclose(data_weights, (1.0 / 2000)), 1, 0)))
+            print("estimator weight: ", estimator_weight)
         
         # Add to list of runs
         print(f"Finished run {run} / {num_runs}")
@@ -179,7 +193,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             if approach == 'Naive (S)':
                 X_syn_run = [each_run_X_syns[run][0]]
             else:
-                X_syn_run = [each_rn_X_syns[run][0]] * n_models
+                X_syn_run = [each_run_X_syns[run][0]] * n_models
 
             y_pred_mean, y_pred_std, models = aggregate(
                 X_test, X_syn_run, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_', verbose=verbose)
@@ -197,6 +211,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                     pred = model.predict_proba(X_test.unpack(as_numpy=True)[0])[:, 1]
                 y_hat.append(pred)
             print(f"shape of {K} DGE y predictions: ", y_hat[0].shape)
+            print(f"model/estimator weights shape: {len(each_run_significance[run])}")
             y_weighted_pred_mean, y_weighted_stds = weighted_meanstd(y_hat, each_run_significance[run])
             print("weighted means: ", y_weighted_pred_mean)
             y_preds[approach].append(y_weighted_pred_mean)

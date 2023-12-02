@@ -219,6 +219,7 @@ def generate_synthetic_boosting(model_name, n_models, save, verbose, X_train, i,
     print("Boost generative model training and synthetic data generation")
     if verbose:
         print(f"Training model {i+1}/{n_models}")
+        print(f"random state: {i}")
 
     reproducibility.enable_reproducible_results(random_state=i)
     if '_deep' in model_name:
@@ -228,6 +229,7 @@ def generate_synthetic_boosting(model_name, n_models, save, verbose, X_train, i,
     elif '_smallest' in model_name:
         syn_model = Plugins().get(model_name.replace('_smallest', ''), discriminator_n_layers_hidden=1, generator_n_layers_hidden=1, generator_n_units_hidden=100, discriminator_n_units_hidden=100)
     else:
+        #syn_model = Plugins().get(model_name, dataloader_sampler=None)
         syn_model = Plugins().get(model_name)
 
     syn_model.fit(X_train, data_weights=data_weights)

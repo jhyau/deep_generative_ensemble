@@ -153,6 +153,7 @@ def supervised_task(X_gt, X_syn, model=None, model_type='mlp', verbose=False):
         pred = model.predict(X_gt.unpack(as_numpy=True)[0])
     else:
         pred = model.predict_proba(X_gt.unpack(as_numpy=True)[0])[:, 1]    
+    print("shape of pred in supervised task: ", pred.shape)
     return pred, model
 
 
@@ -313,8 +314,9 @@ def meanstd(A):
 
 def weighted_meanstd(A, weights):
     print("calculated weighted means/stds with numpy")
+    print(f"A shape: {A.shape}, weight shape: {len(weights)}")
     weighted_mean = np.average(A, weights=weights, axis=0)
-    weighted_varianace = np.average((A - weighted_mean)**2, weights=weights)
+    weighted_variance = np.average((A - weighted_mean)**2, weights=weights, axis=0)
     return weighted_mean, np.sqrt(weighted_variance)
 
 
