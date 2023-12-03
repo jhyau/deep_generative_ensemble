@@ -56,7 +56,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
     each_run_trained_downstream_models = []
     reproducible_state = 0
     for run in range(num_runs):
-        print(f"Run {run} / {num_runs}")
+        print(f"Run {run+1} / {num_runs}")
         significance = []
         # Keep track of the synthetic datasets and trained downstream models
         X_syns = []
@@ -69,7 +69,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
         for i in range(num_iter):
             # Need to make sure that in each iterative step, the weights are corresponding to the examples! e.g. no shuffling or reordering of the examples, or need to make sure to keep indices consistent
             # Train generative model and generate synthetic dataset
-            print(f"Boosting iter: {i} / {num_iter}")
+            print(f"Boosting iter: {i+1} / {num_iter}")
             filename = f"{data_folder}/Xsyn_n{n_train}_seed{i}_boosting_run{run}.pkl"
             X_syn = generate_synthetic_boosting(model_name, num_iter, save, verbose, X_train, reproducible_state, filename, data_weights=data_weights)
             X_syn = GenericDataLoader(X_syn[:nsyn], target_column="target")
@@ -212,7 +212,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 y_hat.append(pred)
             print(f"shape of {K} DGE y predictions: ", y_hat[0].shape)
             print(f"model/estimator weights shape: {len(each_run_significance[run])}")
-            y_weighted_pred_mean, y_weighted_stds = weighted_meanstd(y_hat, each_run_significance[run])
+            y_weighted_pred_mean, y_weighted_stds = weighted_meanstd(y_hat, each_run_significance[run][:K])
             print("weighted means: ", y_weighted_pred_mean)
             y_preds[approach].append(y_weighted_pred_mean)
 
