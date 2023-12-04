@@ -79,6 +79,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             X_syns[i].dataset = dataset
             X_syns[i].targettype = X_gt.targettype
             if dataset == 'covid':
+                X_syn['target'] = (X_syn['target']-1).astype(bool)
                 X_syns[i]['target'] = (X_syns[i]['target']-1).astype(bool)
             reproducible_state += 1
 
