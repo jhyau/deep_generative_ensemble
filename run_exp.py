@@ -31,7 +31,7 @@ Plugins(categories=["generic"]).list()
 from DGE_data import get_real_and_synthetic, get_real_and_synthetic_with_multiple_models
 model_name = 'ctgan'
 
-n_models = 20  # number of models in ensemble, for each run. 20
+n_models = 30  # number of models in ensemble, for each run. 20
 max_n = 2000  # maximum number of data points to use for training generative model.
 nsyn = 2000  # number of synthetic data points per synthetic dataset. Defaults to same as generative training size if None
 
@@ -73,9 +73,15 @@ start_time = time.time()
 for dataset in datasets:
     workspace_folder, results_folder = get_folder_names(
         dataset, model_name, max_n=max_n, nsyn=nsyn)
+    
     # For toy runs
-    workspace_folder = f"{workspace_folder}_{boosting}"
-    results_folder = f"{results_folder}_{boosting}"
+    workspace_folder = f"{workspace_folder}_{boosting}_nModels{n_models}"
+    results_folder = f"{results_folder}_{boosting}_nModels{n_models}"
+    if not os.path.exists(workspace_folder):
+        os.makedirs(workspace_folder)
+
+    if not os.path.exists(results_folder):
+        os.makedirs(results_folder)
 
     print(f'Dataset {dataset}\n')
     print("workspace_folder: ", workspace_folder)
@@ -100,11 +106,26 @@ time_elapsed = end_time - start_time
 print("Time it took to run the experiment: ", time_elapsed)
 
 # Metrics
+finalOutput = f"./results/boosting_{boosting}_{model_name}_{model_type}_runs{num_runs}"
+
+if not os.path.exists(finalOutput):
+    os.makedirs(finalOutput)
+
 # Print results, aggregated over different datasets
 means_consolidated = metric_different_datasets(all_means, to_print=False)
 if num_runs>1:
     stds_consolidated = metric_different_datasets(all_stds, to_print=False)
     stds_consolidated.drop(columns=['Mean'], inplace=True)
     print(add_std(means_consolidated, stds_consolidated).to_latex())
+
+    with open(os.path.join(finalOutput, "final_metrics.txt"), "w") as f:
+        f.write(add_std(means_consolidated, stds_consolidated).to_string())
+        f.write("*****************************Latex format****************************** \n")
+        f.write(add_std(means_consolidated, stds_consolidated).to_latex())
 else:
     print(means_consolidated.to_latex())
+    with open(os.path.join(finalOutput, "final_metrics.txt"), "w") as f:
+        f.write(means_consolidated.to_string())
+        f.write("*****************************Latex format***************************** \n")
+        f.write(means_consolidated.to_latex())
+

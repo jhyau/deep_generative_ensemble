@@ -26,6 +26,11 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
     7. keep track of the "significance" weight for each iteration
     """
     print("Boosting DGE")
+
+    # Write/log outputs to file
+    logroot = os.path.join(workspace_folder, f'log.txt')
+    log = open(logroot, "w")
+
     # Default learning rate for ctgan in training is 1e-3
     n_models = num_iter
     # Load real data
@@ -48,6 +53,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
     n_classes = len(np.unique(X_train.dataframe()['target'].values))
     d = X_test.unpack(as_numpy=True)[0].shape[1]
     print("targettype: ", X_gt.targettype)
+    log.write(f"n_train: {n_train}, nsyn: {nsyn}, n_classes: {n_classes}, targettype: {X_gt.targettype} \n")
+
     if not X_gt.targettype in ['regression', 'classification']:
         raise ValueError('X_gt.targettype must be regression or classification.')
    
@@ -57,6 +64,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
     reproducible_state = 0
     for run in range(num_runs):
         print(f"Run {run+1} / {num_runs}")
+        log.write(f"Run {run+1} / {num_runs} \n")
+
         significance = []
         # Keep track of the synthetic datasets and trained downstream models
         X_syns = []
@@ -70,6 +79,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             # Need to make sure that in each iterative step, the weights are corresponding to the examples! e.g. no shuffling or reordering of the examples, or need to make sure to keep indices consistent
             # Train generative model and generate synthetic dataset
             print(f"Boosting iter: {i+1} / {num_iter}")
+            log.write(f"Boosting iter: {i+1} / {num_iter} \n")
             filename = f"{data_folder}/Xsyn_n{n_train}_seed{i}_boosting_run{run}.pkl"
             X_syn = generate_synthetic_boosting(model_name, num_iter, save, verbose, X_train, reproducible_state, filename, data_weights=data_weights)
             X_syn = GenericDataLoader(X_syn[:nsyn], target_column="target")
@@ -97,6 +107,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             if X_gt.targettype == "classification":
                 acc = accuracy_score(y_true, y_pred_mean>0.5)
                 print(f"Boosting iter {i} accuracy: ", acc)
+                log.write(f"Boosting iter {i} accuracy: {acc} \n")
+
                 bool_y_pred_mean = y_pred_mean>0.5
                 incorrect = y_true != bool_y_pred_mean
             elif X_gt.targettype == 'regression':
@@ -110,6 +122,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             # SAMME.R: boosts weighted prob estimates to update the model instead of classification itself: (n_classes - 1)*(log x - (1/n_classes) * sum(log x_hat))
             if boosting == "SAMME.R":
                 print("boost with SAMME.R")
+                log.write("boost with SAMME.R \n")
+
                 # y coding: y_k = 1 if c==k else -1 / (n_classes - 1) where c,k are indices with c being index corresponding to true class label
                 y_codes = np.array([-1.0 / (n_classes - 1), 1.0])
                 y_coding = y_codes.take(np.unique(y_true) == y_true[:, np.newaxis])
@@ -118,8 +132,12 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 y_pred_mean_newaxis = y_pred_mean[:, np.newaxis]
                 print("y_pred_mean_newaxis size: ", y_pred_mean_newaxis.shape)
                 print("y_coding size: ", y_coding.shape)
+                log.write(f"y_pred_mean_newaxis size: {y_pred_mean_newaxis.shape} \n")
+                log.write(f"y_coding size: {y_coding.shape} \n")
+
                 estimator_weight = -1.0 * lr * ((n_classes - 1.0) / n_classes) * xlogy(y_coding, y_pred_mean_newaxis).sum(axis=1)
                 significance.append(1)
+                log.write(f"estimator weight: {estimator_weight} \n")
                 
                 # Adjust weights
                 if data_weights is None:
@@ -129,6 +147,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                     data_weights *= np.exp(estimator_weight * ((data_weights > 0) | (estimator_weight < 0)))
             else:
                 print("boost with SAMME")
+                log.write("boost with SAMME \n")
+
                 # For SAMME
                 # Sum up the weights of the incorrect examples
                 if data_weights is None:
@@ -137,6 +157,10 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                     estimator_error = np.mean(np.average(incorrect, weights=data_weights, axis=0))
                 estimator_weight = lr * (np.log((1.0 - estimator_error) / estimator_error) + np.log(n_classes - 1.0))
                 significance.append(estimator_weight)
+                log.write(f"estimator error: {estimator_error}, estimator weight: {estimator_weight} \n")
+
+                # TODO: if estimator weight goes negative (the estimator is performing REALLY poorly) remove this estimator and weight entirely
+                # But then what to do next? Train another estimator? Or something else...
 
                 # Adjust weights based on which examples were correct or incorrect and normalize
                 # new weight for incorrect sample = orig_weights * e^(significance)
@@ -152,17 +176,22 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             print("normalized data_weights: ", data_weights)
             print("are all weights equal?: ", np.sum(np.where(np.isclose(data_weights, (1.0 / 2000)), 1, 0)))
             print("estimator weight: ", estimator_weight)
+            log.write(f"normalized data_weights: {data_weights} \n")
+            log.write(f"are all weights equal?: {np.sum(np.where(np.isclose(data_weights, (1.0 / 2000)), 1, 0))} \n")
         
         # Add to list of runs
         print(f"Finished run {run} / {num_runs}")
+        log.write(f"Finished run {run} / {num_runs} \n")
+
         each_run_significance.append(significance)
         each_run_X_syns.append(X_syns)
         each_run_trained_downstream_models.append(trained_downstream_models)
     # add compute metrics and final evaluation
-    print("Start final evaluation...")
+    print("**********************************Start final evaluation...")
+    log.write("***********************************Starting final evaluation... \n")
     #Ks = [20, 10, 5]
     Ks = []
-    for k in [20, 10, 5]:
+    for k in [30, 20, 10, 5]:
         if k <= n_models:
             Ks.append(k)
     y_DGE_approaches = ['DGE$_{'+str(K)+'}$' for K in Ks]
@@ -182,6 +211,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
         run_label = f'run_{run}'
 
         print("run: ", run)
+        log.write(f"run: {run} \n")
         # Oracle ensemble
 
         y_pred_mean, _, models = aggregate(
@@ -211,11 +241,20 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 else:
                     pred = model.predict_proba(X_test.unpack(as_numpy=True)[0])[:, 1]
                 y_hat.append(pred)
+
+                # Calculate accuracy for the downstream classifiers in DGE
+                y_true = X_test.dataframe()['target'].values
+                acc = accuracy_score(y_true, pred>0.5)
+                print(f"Test accuracy for individual downstream model {j} / {K}: {acc}")
+                log.write(f"Test accuracy for individual downstream model {j} / {K}: {acc} \n")
+
             print(f"shape of {K} DGE y predictions: ", y_hat[0].shape)
             print(f"model/estimator weights shape: {len(each_run_significance[run])}")
             y_weighted_pred_mean, y_weighted_stds = weighted_meanstd(y_hat, each_run_significance[run][:K])
             print("weighted means: ", y_weighted_pred_mean)
             y_preds[approach].append(y_weighted_pred_mean)
+            log.write(f"shape of {K} DGE y predictions: {y_hat[0].shape}, model/estimator weights shape: {len(each_run_significance[run])} \n")
+            log.write(f"weighted means: {y_weighted_pred_mean} \n")
 
         # Data aggregated
         X_syn_cat = pd.concat([each_run_X_syns[run][i].dataframe() for i in range(n_models)], axis=0)
@@ -250,6 +289,17 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
         scores_mean, orient='index', columns=scores.columns.drop('Approach'))
     scores_std = pd.DataFrame.from_dict(
         scores_std, orient='index', columns=scores.columns.drop('Approach'))
+
+    # Close the log output writer
+    log.write("mean scores: \n")
+    log.write(scores_mean.to_string())
+    log.write("mean scores latex: \n")
+    log.write(scores_mean.to_latex())
+    log.write("stds: \n")
+    log.write(scores_std.to_string())
+    log.write("stds latex: \n")
+    log.write(scores_std.to_latex())
+    log.close()
 
     return scores_mean, scores_std, scores_all
 
