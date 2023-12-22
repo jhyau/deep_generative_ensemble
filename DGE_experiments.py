@@ -106,8 +106,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             #scores = compute_metrics(y_true, y_pred, X_test.targettype)
             if X_gt.targettype == "classification":
                 acc = accuracy_score(y_true, y_pred_mean>0.5)
-                print(f"Boosting iter {i} accuracy: ", acc)
-                log.write(f"Boosting iter {i} accuracy: {acc} \n")
+                print(f"Boosting iter {i+1} accuracy: ", acc)
+                log.write(f"Boosting iter {i+1} accuracy: {acc} \n")
 
                 bool_y_pred_mean = y_pred_mean>0.5
                 incorrect = y_true != bool_y_pred_mean
@@ -230,6 +230,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 X_test, X_syn_run, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_', verbose=verbose)
             y_preds[approach].append(y_pred_mean)
 
+        # TODO: train original DGE to act as benchmark
+
         # Boosted DGE
         for K, approach in zip(Ks, y_DGE_approaches):
             # Make prediction with each downstream model, then do weighted sum/avg
@@ -292,13 +294,13 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
 
     # Close the log output writer
     log.write("mean scores: \n")
-    log.write(scores_mean.to_string())
+    log.write(scores_mean.to_string() + "\n")
     log.write("mean scores latex: \n")
-    log.write(scores_mean.to_latex())
+    log.write(scores_mean.to_latex() + "\n")
     log.write("stds: \n")
-    log.write(scores_std.to_string())
+    log.write(scores_std.to_string() + "\n")
     log.write("stds latex: \n")
-    log.write(scores_std.to_latex())
+    log.write(scores_std.to_latex() + "\n")
     log.close()
 
     return scores_mean, scores_std, scores_all

@@ -464,6 +464,11 @@ def aggregate_stacking(X_gt, X_syns, task, meta_model='lr', mixed_models=False, 
     task needs to be one of the tasks modified to include stacking changes like supervised_task_stacking
     If mixed_models is True, use different models here, provide a list of downstream models in task_type 
     Else use the same model type
+
+    TODO: change so each level-0 estimator still only trains on one synthetic dataset, but have each evaluate on the entire concatenated synthetic dataset
+    OR
+    split each synthetic dataset into train/val so there is a val set where none of the level-0 estimators have seen the data (in case using the full concatenated
+    synthetic dataset has any fear of skewing towards the level-0 estimator that was trained on a given data(?))
     """
     if task.__name__.find("stacking") == -1:
         raise ValueError('task is not for stacking method')

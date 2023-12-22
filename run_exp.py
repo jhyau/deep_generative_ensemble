@@ -119,13 +119,13 @@ if num_runs>1:
     print(add_std(means_consolidated, stds_consolidated).to_latex())
 
     with open(os.path.join(finalOutput, "final_metrics.txt"), "w") as f:
-        f.write(add_std(means_consolidated, stds_consolidated).to_string())
+        f.write(add_std(means_consolidated, stds_consolidated).to_string() + "\n")
         f.write("*****************************Latex format****************************** \n")
-        f.write(add_std(means_consolidated, stds_consolidated).to_latex())
+        f.write(add_std(means_consolidated, stds_consolidated).to_latex() + "\n")
 else:
     print(means_consolidated.to_latex())
     with open(os.path.join(finalOutput, "final_metrics.txt"), "w") as f:
-        f.write(means_consolidated.to_string())
+        f.write(means_consolidated.to_string() + "\n")
         f.write("*****************************Latex format***************************** \n")
-        f.write(means_consolidated.to_latex())
+        f.write(means_consolidated.to_latex() + "\n")
 
