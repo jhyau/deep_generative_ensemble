@@ -35,7 +35,7 @@ n_models = 30  # number of models in ensemble, for each run. 20
 max_n = 2000  # maximum number of data points to use for training generative model.
 nsyn = 2000  # number of synthetic data points per synthetic dataset. Defaults to same as generative training size if None
 
-num_runs = 3 # Number of runs. Don't choose to large, since total number of synthetic datasets is num_runs*n_models. 10
+num_runs = 10 # Number of runs. Don't choose to large, since total number of synthetic datasets is num_runs*n_models. 10
 
 # Per section 4.1, 10 runs with different seeds
 
@@ -75,8 +75,10 @@ for dataset in datasets:
         dataset, model_name, max_n=max_n, nsyn=nsyn)
     
     # For toy runs
-    workspace_folder = f"{workspace_folder}_{boosting}_nModels{n_models}"
-    results_folder = f"{results_folder}_{boosting}_nModels{n_models}"
+    #workspace_folder = f"{workspace_folder}_{boosting}_nModels{n_models}_full_exp_toy"
+    #results_folder = f"{results_folder}_{boosting}_nModels{n_models}_full_exp_toy"
+    workspace_folder = f"{workspace_folder}_{boosting}_nModels{n_models}_w_origDGE_benchmark"
+    results_folder = f"{results_folder}_{boosting}_nModels{n_models}_w_origDGE_benchmark"
     if not os.path.exists(workspace_folder):
         os.makedirs(workspace_folder)
 
@@ -106,7 +108,7 @@ time_elapsed = end_time - start_time
 print("Time it took to run the experiment: ", time_elapsed)
 
 # Metrics
-finalOutput = f"./results/boosting_{boosting}_{model_name}_{model_type}_runs{num_runs}"
+finalOutput = f"./results/boosting_{boosting}_nModels{n_models}_{model_name}_{model_type}_runs{num_runs}"
 
 if not os.path.exists(finalOutput):
     os.makedirs(finalOutput)

@@ -10,7 +10,7 @@ from scipy.special import xlogy
 from synthcity.plugins.core.dataloader import GenericDataLoader
 
 from DGE_utils import supervised_task, aggregate_imshow, aggregate, aggregate_predictive, cat_dl, compute_metrics, accuracy_confidence_curve, aggregate_stacking, supervised_task_stacking, aggregate_stacking_folds, weighted_meanstd
-from DGE_data import get_real_and_synthetic, load_real_data, generate_synthetic_boosting
+from DGE_data import get_real_and_synthetic, load_real_data, generate_synthetic_boosting, get_synthetic_data
 
 ############################################################################################################
 # Boosting synthetic data generations from downstream task performance
@@ -96,7 +96,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             # Train downstream model on synthetic dataset and evaluate on real train dataset
             run_label = f'run{run}_boosting_iter{i}'
             y_pred_mean, y_pred_std, models = aggregate(
-                    X_train, [X_syn], supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{i}_', verbose=verbose)
+                    X_train, [X_syn], supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'AdaDGE_{run_label}_', verbose=verbose)
             
             assert(len(models) == 1)
             trained_downstream_models.extend(models)
@@ -195,8 +195,9 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
         if k <= n_models:
             Ks.append(k)
     y_DGE_approaches = ['DGE$_{'+str(K)+'}$' for K in Ks]
+    y_AdaDGE_approaches = ['AdaDGE$_{'+str(K)+'}$' for K in Ks]
     y_naive_approaches = ['Naive (S)', 'Naive (E)']
-    keys = ['Oracle'] + y_naive_approaches + y_DGE_approaches[::-1] + [f'DGE$_{n_models}$ (concat)']
+    keys = ['Oracle'] + y_naive_approaches + y_DGE_approaches[::-1] + [f'DGE$_{n_models}$ (concat)'] + y_AdaDGE_approaches
     y_preds = dict(zip(keys, [[] for _ in keys]))
     keys_for_plotting = ['Oracle', 'Naive'] + y_DGE_approaches[::-1]
     y_preds_for_plotting = dict(zip(keys_for_plotting, [None]*len(keys_for_plotting)))
@@ -230,10 +231,36 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 X_test, X_syn_run, supervised_task, models=None, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'naive_m{run}_', verbose=verbose)
             y_preds[approach].append(y_pred_mean)
 
-        # TODO: train original DGE to act as benchmark
+        # Generate synthetic data as per DGE (randomly initialize K generative models)
+        # generate synthetic data for all number of training samples
+        print(f"Running original DGE for benchmark comparison")
+        DGE_X_syns = get_synthetic_data(X_gt, model_name,
+                                n_models=n_models,
+                                nsyn=nsyn,
+                                data_folder=data_folder,
+                                load_syn=True,
+                                save=save,
+                                verbose=verbose)
+
+        starting_dataset = run*n_models
+        models = None
+        for K, approach in zip(Ks, y_DGE_approaches):
+            y_pred_mean, y_pred_std, models = aggregate(
+                X_test, DGE_X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{run_label}_', verbose=verbose)
+
+            if d == 2 and plot and run == 0:
+                aggregate_imshow(
+                    X_test, X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, results_folder=results_folder, task_type=task_type, load=load, save=save, filename=f'DGE_K{K}_{run_label}_', baseline_contour=contour)
+
+            y_preds[approach].append(y_pred_mean)
+
+            # for plotting calibration and confidence curves later
+            #if run == 0 and plot:
+            #    y_preds_for_plotting[approach] = y_pred_mean
 
         # Boosted DGE
-        for K, approach in zip(Ks, y_DGE_approaches):
+        print("AdaDGE final evaluation...")
+        for K, approach in zip(Ks, y_AdaDGE_approaches):
             # Make prediction with each downstream model, then do weighted sum/avg
             y_hat = []
             for j in range(K):
@@ -250,7 +277,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 print(f"Test accuracy for individual downstream model {j} / {K}: {acc}")
                 log.write(f"Test accuracy for individual downstream model {j} / {K}: {acc} \n")
 
-            print(f"shape of {K} DGE y predictions: ", y_hat[0].shape)
+            print(f"shape of {K} AdaDGE y predictions: ", y_hat[0].shape)
             print(f"model/estimator weights shape: {len(each_run_significance[run])}")
             y_weighted_pred_mean, y_weighted_stds = weighted_meanstd(y_hat, each_run_significance[run][:K])
             print("weighted means: ", y_weighted_pred_mean)
