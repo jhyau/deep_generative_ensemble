@@ -72,7 +72,7 @@ print("verbose: ", verbose)
 print("plot: ", plot)
 
 # Metrics and overall logging folder
-finalOutput = f"./results/boosting_{boosting}_nModels{n_models}_{model_name}_{model_type}_runs{num_runs}"
+finalOutput = f"./results/boosting_{boosting}_nModels{n_models}_{model_name}_{model_type}_runs{num_runs}_w_origDGE_benchmark"
 
 if not os.path.exists(finalOutput):
     os.makedirs(finalOutput)

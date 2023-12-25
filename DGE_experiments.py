@@ -182,8 +182,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
             log.write(f"are all weights equal?: {np.sum(np.where(np.isclose(data_weights, (1.0 / 2000)), 1, 0))} \n")
         
         # Add to list of runs
-        print(f"Finished run {run} / {num_runs}")
-        log.write(f"Finished run {run} / {num_runs} \n")
+        print(f"Finished run {run+1} / {num_runs}")
+        log.write(f"Finished run {run+1} / {num_runs} \n")
 
         each_run_significance.append(significance)
         each_run_X_syns.append(X_syns)
@@ -209,12 +209,24 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
     X_oracle.targettype = X_syns[0].targettype
 
     X_oracle = [X_oracle] * n_models
+
+    # Generate synthetic data as per DGE (randomly initialize K generative models)
+    # generate synthetic data for all number of training samples
+    print(f"Running synthetic data generation for original DGE for benchmark comparison")
+    DGE_X_syns = get_synthetic_data(X_gt, model_name,
+                            n_models=n_models*num_runs, # determines how many synthetic datasets to generate
+                            nsyn=nsyn,
+                            data_folder=data_folder,
+                            load_syn=True,
+                            save=save,
+                            verbose=verbose)
+
     for run in range(num_runs):
 
         run_label = f'run_{run}'
 
-        print("run: ", run)
-        log.write(f"run: {run} \n")
+        print(f"run: {run} / {num_runs}")
+        log.write(f"run: {run} / {num_runs} \n")
         # Oracle ensemble
 
         y_pred_mean, _, models = aggregate(
@@ -236,14 +248,7 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
         # Generate synthetic data as per DGE (randomly initialize K generative models)
         # generate synthetic data for all number of training samples
         print(f"Running original DGE for benchmark comparison")
-        DGE_X_syns = get_synthetic_data(X_gt, model_name,
-                                n_models=n_models,
-                                nsyn=nsyn,
-                                data_folder=data_folder,
-                                load_syn=True,
-                                save=save,
-                                verbose=verbose)
-
+        log.write("Running original DGE for benchmark comparison \n")
         starting_dataset = run*n_models
         models = None
         for K, approach in zip(Ks, y_DGE_approaches):
