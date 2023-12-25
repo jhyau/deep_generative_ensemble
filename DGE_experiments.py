@@ -15,7 +15,7 @@ from DGE_data import get_real_and_synthetic, load_real_data, generate_synthetic_
 ############################################################################################################
 # Boosting synthetic data generations from downstream task performance
 
-def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.R", p_train=0.8, max_n=2000, nsyn=None, reduce_to=20000, task_type='mlp', workspace_folder='workspace', save=True, load=True, verbose=True):
+def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.R", p_train=0.8, max_n=2000, nsyn=None, reduce_to=20000, task_type='mlp', workspace_folder='workspace', save=True, load=True, verbose=True, plot=False):
     """Apply boosting to DGE
     1. initialize all weights to be equal for each train example, 1/num examples
     2. train generative model
@@ -54,6 +54,8 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
     d = X_test.unpack(as_numpy=True)[0].shape[1]
     print("targettype: ", X_gt.targettype)
     log.write(f"n_train: {n_train}, nsyn: {nsyn}, n_classes: {n_classes}, targettype: {X_gt.targettype} \n")
+    print(f"num dimensions in data: {d}")
+    log.write(f"num dimensions in data: {d} \n")
 
     if not X_gt.targettype in ['regression', 'classification']:
         raise ValueError('X_gt.targettype must be regression or classification.')
@@ -249,17 +251,22 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
                 X_test, DGE_X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, task_type=task_type, load=load, save=save, filename=f'DGE_{run_label}_', verbose=verbose)
 
             if d == 2 and plot and run == 0:
+                print("DGE plotting...")
+                log.write("DGE plotting... \n")
                 aggregate_imshow(
-                    X_test, X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, results_folder=results_folder, task_type=task_type, load=load, save=save, filename=f'DGE_K{K}_{run_label}_', baseline_contour=contour)
+                    X_test, DGE_X_syns[starting_dataset:starting_dataset+K], supervised_task, models=models, workspace_folder=workspace_folder, results_folder=results_folder, task_type=task_type, load=load, save=save, filename=f'DGE_K{K}_{run_label}_', baseline_contour=contour)
 
             y_preds[approach].append(y_pred_mean)
 
             # for plotting calibration and confidence curves later
-            #if run == 0 and plot:
-            #    y_preds_for_plotting[approach] = y_pred_mean
+            if run == 0 and plot:
+                print("adding stuff to plots")
+                log.write("adding stuff to plots \n")
+                y_preds_for_plotting[approach] = y_pred_mean
 
         # Boosted DGE
         print("AdaDGE final evaluation...")
+        log.write("AdaDGE final evaluation...")
         for K, approach in zip(Ks, y_AdaDGE_approaches):
             # Make prediction with each downstream model, then do weighted sum/avg
             y_hat = []

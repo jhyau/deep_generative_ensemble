@@ -45,6 +45,7 @@ load_syn = True  # data
 save = True  # save results and data
 
 verbose = True
+plot = False
 
 from DGE_experiments import predictive_experiment, predictive_experiment_stacking, boosting_DGE
 import pandas as pd
@@ -60,7 +61,7 @@ test_only_dataset = ['adult']
 model_type = 'deepish_mlp'
 boosting = "SAMME"
 
-print("Model to run: ", model_name)
+print("Generative model to run: ", model_name)
 print("Downstream classifier model type: ", model_type)
 print("boosting method: ", boosting)
 print("n_models: ", n_models)
@@ -68,6 +69,29 @@ print("num_runs: ", num_runs)
 print("datasets: ", datasets)
 print("model string: ", model_name)
 print("verbose: ", verbose)
+print("plot: ", plot)
+
+# Metrics and overall logging folder
+finalOutput = f"./results/boosting_{boosting}_nModels{n_models}_{model_name}_{model_type}_runs{num_runs}"
+
+if not os.path.exists(finalOutput):
+    os.makedirs(finalOutput)
+
+with open(os.path.join(finalOutput, "exp_info.txt"), "w") as f:
+    f.write(f"Generative model to run: {model_name} \n")
+    f.write(f"Downstream classifier model type: {model_type} \n")
+    f.write(f"boosting method: {boosting} \n")
+    f.write(f"n_models: {n_models} \n")
+    f.write(f"max_n for training gen mode: {max_n} \n")
+    f.write(f"nsyn for synthetic datapoint to generate per dataset: {nsyn} \n")
+    f.write(f"num_runs: {num_runs} \n")
+    f.write(f"datasets: {datasets} \n")
+    f.write(f"model string: {model_name} \n")
+    f.write(f"load: {load} \n")
+    f.write(f"load_syn: {load_syn} \n")
+    f.write(f"save: {save} \n")
+    f.write(f"verbose: {verbose} \n")
+    f.write(f"plot: {plot} \n")
 
 start_time = time.time()
 for dataset in datasets:
@@ -91,7 +115,7 @@ for dataset in datasets:
 
     means, stds, _ = boosting_DGE(dataset, model_name, num_runs=num_runs, num_iter=n_models, boosting=boosting, p_train=0.8,
                                   max_n=max_n, nsyn=nsyn, reduce_to=20000, task_type=model_type, workspace_folder=workspace_folder,
-                                  save=save, load=load, verbose=verbose)
+                                  save=save, load=load, verbose=verbose, plot=plot)
     print("printing weighted avg means to latex:")
     print(means.to_latex())
     print("printing weighted stds to latex:")
@@ -107,11 +131,15 @@ end_time = time.time()
 time_elapsed = end_time - start_time
 print("Time it took to run the experiment: ", time_elapsed)
 
-# Metrics
-finalOutput = f"./results/boosting_{boosting}_nModels{n_models}_{model_name}_{model_type}_runs{num_runs}"
+with open(os.path.join(finalOutput, "exp_info.txt"), "a") as f:
+    f.write(f"Time it took to run the experiment: {time_elapsed} \n")
 
-if not os.path.exists(finalOutput):
-    os.makedirs(finalOutput)
+
+# Metrics
+#finalOutput = f"./results/boosting_{boosting}_nModels{n_models}_{model_name}_{model_type}_runs{num_runs}"
+
+#if not os.path.exists(finalOutput):
+#    os.makedirs(finalOutput)
 
 # Print results, aggregated over different datasets
 means_consolidated = metric_different_datasets(all_means, to_print=False)
