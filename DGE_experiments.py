@@ -314,8 +314,14 @@ def boosting_DGE(dataset, model_name, num_runs=10, num_iter=20, boosting="SAMME.
     scores_std = {}
 
     scores_all = []
+    print("Computing total metrics for approaches: ", y_preds.keys())
+    log.write(f"Computing total metrics for approaches: {y_preds.keys()} \n")
     for approach in y_preds.keys():
         scores = []
+        print("Computing metrics for approach: ", approach)
+        log.write(f"Computing metrics for approach: {approach} \n")
+        print(f"Number of results in approach {approach}: {len(y_preds[approach])}, should be number of runs {num_runs}")
+        log.write(f"Number of results in approach {approach}: {len(y_preds[approach])}, should be number of runs {num_runs} \n")
         for y_pred in y_preds[approach]:
             scores.append(compute_metrics(y_true, y_pred, X_test.targettype))
 
